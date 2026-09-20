@@ -1,0 +1,18 @@
+# Core
+faster-whisper
+sounddevice
+numpy
+httpx
+Pillow
+keyboard
+pywin32
+comtypes
+pycaw
+
+# Optional: FLAC encoding before upload (smaller, faster uploads).
+# Without it, audio is sent as WAV.
+av
+
+# Optional: local live-preview engines. Only needed if you run the preview offline.
+# sherpa-onnx
+# vosk

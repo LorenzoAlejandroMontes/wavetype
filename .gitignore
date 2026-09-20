@@ -1,0 +1,28 @@
+# Secrets - never commit
+groq_key.txt
+
+# Personal / runtime data
+vocab.txt
+wavetype_history.txt
+last_rec.wav
+skin.txt
+card_style.txt
+wavetype.log
+frame_debug.png
+groq_usage.json
+recordings/
+
+# Test fixtures that contain dictated text
+tests/cache/
+tests/baseline*.json
+baseline*.json
+tests/panel_out/
+
+# Local live-engine models (heavy, re-downloadable)
+models/
+
+# Environment and build
+.venv/
+__pycache__/
+*.pyc
+build/
