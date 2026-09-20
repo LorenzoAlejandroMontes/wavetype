@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/img/logo.png" alt="Wavetype" width="380">
+</p>
+
 <h1 align="center">Wavetype</h1>
 
 <p align="center">
