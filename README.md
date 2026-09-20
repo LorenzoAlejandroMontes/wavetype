@@ -17,7 +17,7 @@
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-black">
   <img alt="Platform: Windows" src="https://img.shields.io/badge/platform-Windows-black">
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-black">
-  <img alt="134 tests" src="https://img.shields.io/badge/tests-134%20passing-black">
+  <img alt="150 tests" src="https://img.shields.io/badge/tests-150%20passing-black">
 </p>
 
 ---
@@ -39,6 +39,10 @@ carries on the same way and the text still arrives.
 
 Any app, any text field. Italian, English and Spanish with auto-detect. The text that lands is
 already formatted, so you are not left cleaning up a transcript.
+
+Start talking halfway through a line you already began and the words pick it up where you left
+off, lowercase and spaced. Start on an empty field and you get a fresh capitalised sentence.
+Names from your dictionary, acronyms and *I* keep their capital either way.
 
 ### Edit what you already wrote
 
@@ -171,6 +175,7 @@ That file is gitignored.
 - `live_panel.py` + `card_styles.py` — the card: layout, the three styles, every phase.
 - `edit_chips.py` — Edit Mode chips and the instructions behind them.
 - `caret.py` — finds the caret so the card knows where to sit.
+- `context.py` — reads what sits before the caret so the dictation continues your sentence.
 
 ## Tests
 
@@ -181,6 +186,7 @@ That file is gitignored.
 .\.venv\Scripts\python tests\test_live_local.py
 .\.venv\Scripts\python tests\test_panel_styles.py
 .\.venv\Scripts\python tests\test_edit_card.py
+.\.venv\Scripts\python tests\test_context.py
 ```
 
 Each file prints `n/n ok` and exits non-zero on failure. The ones that need a Groq key skip

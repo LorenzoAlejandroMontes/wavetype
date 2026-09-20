@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta charset="utf-8"><title>CASO0</title>
+<style>body{font:16px system-ui;padding:20px}textarea,div.ce{display:block;width:620px;height:70px;font:16px system-ui;padding:8px;border:1px solid #888;margin:10px 0}
+label{font-weight:600}</style></head><body>
+<h3>Messaggio al canale generale</h3>
+<label for="ta">Scrivi qui</label>
+<textarea id="ta"></textarea>
+<div class="ce" contenteditable="true" id="ce"></div>
+<script>
+const ta = document.getElementById('ta'), ce = document.getElementById('ce');
+function setCE(txt, pos){
+  ce.textContent = txt;
+  const r = document.createRange(), s = getSelection();
+  r.setStart(ce.firstChild || ce, pos); r.collapse(true);
+  s.removeAllRanges(); s.addRange(r); ce.focus();
+}
+const CASI = [
+  ["A-meta-frase", () => { ta.value = "Ciao a tutti, questa e' una frase gia' scritta a meta"; ta.focus(); ta.setSelectionRange(30,30); }],
+  ["B-campo-vuoto", () => { ta.value = ""; ta.focus(); ta.setSelectionRange(0,0); }],
+  ["C-dopo-punto", () => { ta.value = "Ho finito il lavoro. "; ta.focus(); ta.setSelectionRange(21,21); }],
+  ["D-contenteditable", () => { setCE("Seconda riga di prova e il cursore sta a meta", 25); }],
+  ["E-ce-vuoto", () => { setCE("", 0); }],
+];
+let i = 0;
+function run(){ const [n, f] = CASI[i % CASI.length]; document.title = n; f(); i++; }
+run(); setInterval(run, 4000);
+</script></body></html>

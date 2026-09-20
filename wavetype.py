@@ -55,8 +55,9 @@ try:
         import live_engine             # motore live (Lotto B): trascrive mentre parli
     import live_panel                  # pannello accanto al cursore (Lotto C)
     import caret as caret_mod          # dov'e' il cursore di testo
+    import context as ctx_mod          # cosa c'e' scritto PRIMA del cursore
 except Exception as _le:               # un modulo che non c'e' non deve impedire la dettatura
-    live_engine = live_panel = caret_mod = None
+    live_engine = live_panel = caret_mod = ctx_mod = None
     _LIVE_IMPORT_ERR = _le
 try:
     import edit_chips                  # i tre comandi di Edit Mode (Grammar, English, Slack)
@@ -142,13 +143,13 @@ LLM_PROMPT = (
 
 def _load_vocab():
     try:
-        terms = [l.strip() for l in open("vocab.txt", encoding="utf-8")
-                 if l.strip() and not l.lstrip().startswith("#")]
-        return ", ".join(terms)
+        return [l.strip() for l in open("vocab.txt", encoding="utf-8")
+                if l.strip() and not l.lstrip().startswith("#")]
     except Exception:
-        return ""
+        return []
 
-VOCAB = _load_vocab()
+VOCAB_TERMS = _load_vocab()
+VOCAB = ", ".join(VOCAB_TERMS)
 
 
 def build_prompt(text, lang):
@@ -166,6 +167,9 @@ CHUNK_SEC = 540               # durata dei pezzi quando si spezza: 9 min ~= 17MB
 GROQ_TRIES = 3                # tentativi su errore di rete/5xx prima di arrendersi
 REC_REMIND_SEC = 300          # promemoria sonoro: "stai ancora registrando" ogni N secondi
 LOG_HEARTBEAT = False         # battito dell'HUD nel log: solo per debug (riempie il file)
+CONTEXT_ON = True             # cursore a meta' di una frase gia' scritta: il dettato continua la
+                              # frase (minuscola e spazio) invece di aprirne una nuova. False =
+                              # come prima, sempre maiuscola
 HUD_ON = False                # interruttore dell'HUD (cane/faccina/pallina). False = mai a schermo, ne' da
 #                               fermo ne' all'avvio: la card e' l'unico indicatore.
 #                               True lo rimette com'era. Rete di sicurezza con False: se registri o
@@ -212,7 +216,8 @@ model = None
 ui = {"state": "idle"}          # idle | rec | proc — letto dalla UI
 flags = {"quit": False, "cancel": False, "dismiss": False}
 rec = {"held": False, "frames": [], "hwnd": 0, "stream": None,
-       "edit": False, "sel": "", "t0": 0.0, "remind": 1, "chip": None}
+       "edit": False, "sel": "", "t0": 0.0, "remind": 1, "chip": None,
+       "ctx": None}   # testo che precede il cursore, letto all'inizio della dettatura
 insert_jobs = []   # (hwnd, testo) da incollare sul THREAD PRINCIPALE (win32 da thread fresco -> segfault)
 
 
@@ -1119,6 +1124,20 @@ def insert_text(hwnd, text):
             pass
 
 
+def read_context(hwnd, token):
+    """Cosa c'e' scritto prima del cursore, letto mentre parli (mai nel percorso dell'incolla)."""
+    try:
+        prev = ctx_mod.before_caret(hwnd)
+    except Exception as e:
+        log(f"   [ctx] non letto: {e}")
+        return
+    if rec["t0"] != token:             # nel frattempo e' partita un'altra dettatura: non e' mia
+        return
+    rec["ctx"] = prev
+    if prev is not None and not ctx_mod.starts_sentence(prev):
+        log(f"   [ctx] cursore a meta' frase, dopo: '{prev[-30:]}'")
+
+
 def start_rec(edit=False, sel=""):
     rec["held"] = True
     rec["edit"] = edit
@@ -1138,6 +1157,9 @@ def start_rec(edit=False, sel=""):
         flags["dismiss"] = False       # l'indicatore: con la card a schermo resta dov'era
     rec["stream"] = sd.InputStream(samplerate=REC_SR, channels=1, dtype="float32", callback=audio_cb)
     rec["stream"].start()
+    rec["ctx"] = None
+    if CONTEXT_ON and ctx_mod is not None and not edit:
+        threading.Thread(target=read_context, args=(rec["hwnd"], rec["t0"]), daemon=True).start()
     tag = "EDIT" if edit else "REC"
     log(f"\n=== {tag} — target: '{win32gui.GetWindowText(rec['hwnd'])}' | "
         f"mic: '{input_device_name()}' ===")
@@ -1215,7 +1237,7 @@ def stop_and_process():
     ui["state"] = "proc"
     live_phase("rewriting" if rec["edit"] else "formatting")   # dallo stop all'incolla
     threading.Thread(target=_process, args=(rec["frames"], rec["hwnd"], rec["edit"], rec["sel"],
-                                            rec["chip"]), daemon=True).start()
+                                            rec["chip"], rec["ctx"]), daemon=True).start()
 
 
 _stt_net = threading.local()   # per thread: l'ultima stt() e' rimasta senza testo per la rete?
@@ -1273,7 +1295,7 @@ def edit_instruction(text, chip=None):
     return (instr or text), cid
 
 
-def _finish(text, lang, hwnd, edit, sel, t0, chip=None):
+def _finish(text, lang, hwnd, edit, sel, t0, chip=None, ctx=None):
     """Dal trascritto al testo incollato: edit mode, oppure pulizia+formattazione e storico."""
     if edit:                                    # EDIT MODE: text = istruzione vocale
         instr, cid = edit_instruction(text, chip)
@@ -1314,14 +1336,22 @@ def _finish(text, lang, hwnd, edit, sel, t0, chip=None):
     with open(HISTORY, "a", encoding="utf-8") as f:
         f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\t{lang}\t"
                 f"RAW:{text}\tOUT:{final.replace(chr(10), '\\n')}\n")
+    out = final
+    if CONTEXT_ON and ctx_mod is not None and ctx is not None:
+        try:
+            out = ctx_mod.fit(ctx, final, VOCAB_TERMS)
+            if out != final:
+                log(f"   [ctx] continua la frase: '{out[:40]}'")
+        except Exception as e:
+            log(f"   [ctx] non applicato: {e}")
     if not rec["held"]:                         # se e' gia' partita la dettatura dopo, il pannello
-        live_show_final(final)                  # e il motore sono suoi: questa non glieli prende
+        live_show_final(out)                    # e il motore sono suoi: questa non glieli prende
         live["expect_paste"] = live["open"]     # l'incolla chiudera' il pannello (live_pasted)
-    insert_jobs.append((hwnd, final))           # incolla sul thread principale (no segfault)
+    insert_jobs.append((hwnd, out))             # incolla sul thread principale (no segfault)
     log(f"   [insert] accodato ({time.perf_counter()-t0:.2f}s)")
 
 
-def _process(frames, hwnd, edit=False, sel="", chip=None):
+def _process(frames, hwnd, edit=False, sel="", chip=None, ctx=None):
     t0 = time.perf_counter()
     try:
         if flags["cancel"]:
@@ -1390,7 +1420,7 @@ def _process(frames, hwnd, edit=False, sel="", chip=None):
                 f"{peak:.5f}): allucinazione tipica, non incollo. Win+Ctrl+R per forzarlo.")
             beep_silence()
             return
-        _finish(text, lang, hwnd, edit, sel, t0)
+        _finish(text, lang, hwnd, edit, sel, t0, ctx=ctx)
     finally:
         ui["state"] = "idle"
         if not live["expect_paste"] and not rec["held"]:
@@ -1430,12 +1460,17 @@ def reprocess_last(hwnd, path=None):
         log(f"\n=== RECUPERO {os.path.basename(path)} ({dur:.1f}s) — "
             f"target: '{win32gui.GetWindowText(hwnd)}' ===")
         live_recover_start(hwnd, dur)
+        box = []                       # il contesto si legge mentre la trascrizione lavora
+        if CONTEXT_ON and ctx_mod is not None:
+            threading.Thread(target=lambda: box.append(ctx_mod.before_caret(hwnd)),
+                             daemon=True).start()
         text, lang = stt(path, a16, t0)
+        rctx = box[0] if box else None
         if flags["cancel"] or not text:
             log("   [recupero] nessun testo")
             live_end("unrecovered", LIVE_RECOVER_HOLD)
             return
-        _finish(text, lang, hwnd, False, "", t0)
+        _finish(text, lang, hwnd, False, "", t0, ctx=rctx)
         if not live["expect_paste"]:      # formattazione a vuoto (EMPTY): niente incolla, niente
             log("   [recupero] niente da incollare")   # esito -> la card resterebbe appesa
             live_end("unrecovered", LIVE_RECOVER_HOLD)
@@ -1980,6 +2015,8 @@ def build_ui():
         try:
             caret_mod.set_log(log)
             caret_mod.prewarm()
+            if ctx_mod is not None:
+                ctx_mod.set_log(log)
         except Exception as e:
             log(f"   [live] prewarm caret: {e}")
     frames = 0

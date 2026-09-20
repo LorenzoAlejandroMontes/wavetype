@@ -740,6 +740,74 @@ def test_una_dettatura_dopo_il_recupero_torna_normale():
     assert p.phases()[-1] == "inserted", p.calls
 
 
+# ---------- contesto: il cursore a meta' di una frase gia' scritta ----------
+def _detta(ctx, formattato="Domani arrivo presto.", acceso=True):
+    """Fa girare il vero _finish() con un contesto dato: torna (incollato, riga di storico)."""
+    reset()
+    tmp = tempfile.mkdtemp(prefix="wavetype-ctx-")
+    hist = os.path.join(tmp, "hist.txt")
+    saved = {k: getattr(wavetype, k) for k in ("HISTORY", "format_text", "CONTEXT_ON")}
+    try:
+        wavetype.HISTORY = hist
+        wavetype.format_text = lambda text, lang: formattato
+        wavetype.CONTEXT_ON = acceso
+        wavetype._finish("grezzo", "it", 7, False, "", time.perf_counter(), ctx=ctx)
+    finally:
+        for k, v in saved.items():
+            setattr(wavetype, k, v)
+    riga = open(hist, encoding="utf-8").read() if os.path.exists(hist) else ""
+    return (wavetype.insert_jobs[-1][1] if wavetype.insert_jobs else None), riga
+
+
+def test_ctx_meta_frase_abbassa_e_spazia():
+    out, _ = _detta("quindi volevo dirti che")
+    assert out == " domani arrivo presto.", out
+
+
+def test_ctx_dopo_il_punto_resta_maiuscolo():
+    out, _ = _detta("Ho finito il lavoro. ")
+    assert out == "Domani arrivo presto.", out
+
+
+def test_ctx_sconosciuto_si_comporta_come_prima():
+    out, _ = _detta(None)
+    assert out == "Domani arrivo presto.", out
+
+
+def test_ctx_spento_non_tocca_niente():
+    out, _ = _detta("quindi volevo dirti che", acceso=False)
+    assert out == "Domani arrivo presto.", out
+
+
+def test_ctx_lo_storico_tiene_il_testo_formattato_puro():
+    """Il replay confronta OUT: con la baseline: l'adattamento al cursore non ci entra."""
+    out, riga = _detta("quindi volevo dirti che")
+    assert "OUT:Domani arrivo presto." in riga, riga
+    assert out.startswith(" domani"), out
+
+
+def test_ctx_letto_in_dettatura_e_non_rubato_da_quella_dopo():
+    reset()
+    saved = wavetype.ctx_mod
+    try:
+        class FintoCtx:
+            testo = "quindi volevo dirti che"
+            @staticmethod
+            def before_caret(hwnd, budget=None):
+                return FintoCtx.testo
+            starts_sentence = staticmethod(lambda prev: wavetype.ctx_mod is None)
+        wavetype.ctx_mod = FintoCtx
+        wavetype.rec["t0"] = 100.0
+        wavetype.read_context(7, 100.0)
+        assert wavetype.rec["ctx"] == "quindi volevo dirti che", wavetype.rec["ctx"]
+        wavetype.rec["ctx"] = None
+        wavetype.rec["t0"] = 200.0                 # e' partita un'altra dettatura
+        wavetype.read_context(7, 100.0)
+        assert wavetype.rec["ctx"] is None, wavetype.rec["ctx"]
+    finally:
+        wavetype.ctx_mod = saved
+
+
 def main():
     tests = [(n, f) for n, f in globals().items() if n.startswith("test_") and callable(f)]
     bad = 0
