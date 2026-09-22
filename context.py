@@ -202,7 +202,7 @@ def _keep_case(word, keep=()):
     if word == "I":
         return True
     low = word.lower()
-    # nel dizionario i nomi possono essere piu' parole ("Fondazione Alberto Genovese"):
+    # nel dizionario i nomi possono essere piu' parole ("Banca del Tempo"):
     # qui conta la prima, perche' e' quella che finirebbe sotto la lente della minuscola
     return any(low == k.split()[0].lower() for k in keep if k.strip())
 

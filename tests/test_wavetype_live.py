@@ -808,6 +808,60 @@ def test_ctx_letto_in_dettatura_e_non_rubato_da_quella_dopo():
         wavetype.ctx_mod = saved
 
 
+# ---------- formattazione: il testo lungo non si taglia ----------
+def _fmt_con(fake):
+    """Esegue format_text con groq_format finto, senza rete ne' modello locale. USE_GROQ forzato:
+    dipende da groq_key.txt nella cartella, e senza chiave format_text salterebbe proprio la strada
+    che questi test provano (e passerebbero per il ripiego, senza vedere niente)."""
+    saved = (wavetype.groq_format, wavetype.llm_format, wavetype.USE_GROQ, wavetype.USE_LLM)
+    wavetype.groq_format, wavetype.llm_format = fake, lambda t, l: None
+    wavetype.USE_GROQ, wavetype.USE_LLM = True, True
+    try:
+        return wavetype.format_text(LUNGO, "Italian")
+    finally:
+        wavetype.groq_format, wavetype.llm_format, wavetype.USE_GROQ, wavetype.USE_LLM = saved
+
+
+LUNGO = ("Allora volevo dirti una cosa importante sul progetto. " * 40).strip()
+
+
+def test_fmt_blocks_non_perde_parole():
+    parti = wavetype.fmt_blocks(LUNGO)
+    assert len(parti) > 1, len(parti)
+    assert all(len(b) <= wavetype.FMT_CHUNK_CHARS for b in parti), [len(b) for b in parti]
+    assert " ".join(parti).split() == LUNGO.split()
+
+
+def test_fmt_risposta_tagliata_tiene_tutte_le_parole():
+    """La risposta si ferma contro il tetto dei token. Meglio grezzo che meta'."""
+    def tagliata(text, lang):
+        return text[:len(text) // 3], True          # (testo, tagliato)
+    out = _fmt_con(tagliata)
+    assert len(out.split()) == len(LUNGO.split()), (len(out.split()), len(LUNGO.split()))
+
+
+def test_fmt_pezzo_riassunto_tiene_quel_pezzo_com_e():
+    """Un pezzo riassunto non porta via il testo: quel pezzo resta dettato, gli altri ripuliti."""
+    meta = wavetype.fmt_blocks(LUNGO)[1]    # i pezzi partono insieme: il pezzo da riassumere si
+    #                                         riconosce dal testo, non dall'ordine delle chiamate
+
+    def a_meta(text, lang):
+        if text == meta:
+            return " ".join(text.split()[:len(text.split()) // 3]), False
+        return "PULITO " + text, False
+    out = _fmt_con(a_meta)
+    assert out.count("PULITO") == len(wavetype.fmt_blocks(LUNGO)) - 1, out.count("PULITO")
+    # niente soglie qui: il pezzo riassunto torna grezzo, quindi le parole devono esserci TUTTE
+    # (il conto tiene le "PULITO" aggiunte dallo stub agli altri pezzi)
+    assert len(out.split()) - out.count("PULITO") == len(LUNGO.split()), len(out.split())
+
+
+def test_fmt_groq_muto_non_perde_il_dettato():
+    def esplode(text, lang):
+        raise httpx.ConnectError("rete giu'")
+    assert len(_fmt_con(esplode).split()) == len(LUNGO.split())
+
+
 def main():
     tests = [(n, f) for n, f in globals().items() if n.startswith("test_") and callable(f)]
     bad = 0

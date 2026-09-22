@@ -17,7 +17,7 @@
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-black">
   <img alt="Platform: Windows" src="https://img.shields.io/badge/platform-Windows-black">
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-black">
-  <img alt="150 tests" src="https://img.shields.io/badge/tests-150%20passing-black">
+  <img alt="159 tests" src="https://img.shields.io/badge/tests-159%20passing-black">
 </p>
 
 ---
@@ -43,6 +43,11 @@ already formatted, so you are not left cleaning up a transcript.
 Start talking halfway through a line you already began and the words pick it up where you left
 off, lowercase and spaced. Start on an empty field and you get a fresh capitalised sentence.
 Names from your dictionary, acronyms and *I* keep their capital either way.
+
+Talk for ten minutes and the whole take lands. A long dictation is split at sentence ends and the
+pieces are cleaned side by side; if a piece comes back shorter than what you said, that piece is
+pasted in your own words and two falling notes tell you, so what reaches the field is everything
+you dictated.
 
 ### Edit what you already wrote
 
@@ -158,7 +163,15 @@ Every take is written to `recordings/` **before** it is sent anywhere, and kept 
 network drops, if Groq times out, or if you hit Esc by mistake, press **Win+Ctrl+R** and the audio
 is transcribed again and pasted into the active window. The card next to the caret shows how long
 the recording is while it works, then shows the text that comes back — or, if nothing does, what
-to do next (the audio stays in the archive either way). Calls are retried three times on their own.
+to do next (the audio stays in the archive either way). Calls are retried three times on their own,
+waiting as long as the API asks when it is rate limited.
+
+Long takes get a second look. Speech models can lose the thread on a long stretch of continuous
+speech: punctuation stops and short accented words come back clipped. Wavetype spots that pattern
+— a long run with no punctuation that also has clipped words in it — and transcribes the audio
+again in 60-second pieces, keeping whichever of the two reads better. On a 435-second take that
+turned two runs of 69 and 157 words into clean sentences, at the cost of 23 seconds instead of 10,
+on the 1.4% of dictations where it triggers.
 
 ## Custom vocabulary
 
@@ -187,6 +200,7 @@ That file is gitignored.
 .\.venv\Scripts\python tests\test_panel_styles.py
 .\.venv\Scripts\python tests\test_edit_card.py
 .\.venv\Scripts\python tests\test_context.py
+.\.venv\Scripts\python tests\test_derail.py
 ```
 
 Each file prints `n/n ok` and exits non-zero on failure. The ones that need a Groq key skip

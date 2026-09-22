@@ -15,6 +15,7 @@ a worker thread polls the keys, records, transcribes and pastes, so the UI never
 Code comments are in Italian - the author's language. Issues and PRs in English are welcome.
 """
 import os
+import re
 import sys
 import time
 import shutil
@@ -115,6 +116,25 @@ GROQ_KEY = _load_groq_key()
 USE_GROQ = GROQ_KEY is not None
 GROQ_STT_MODEL = "whisper-large-v3-turbo"
 GROQ_LLM_MODEL = "openai/gpt-oss-120b"
+GROQ_LLM_MAX_OUT = 8192   # tetto esplicito dei token di risposta. Senza, vale il default del
+#                           modello: 3072 compresi i token di ragionamento (misurato il 22/09 su un
+#                           dettato di 7 min: 3070 bruciati a ragionare, risposta tagliata a meta').
+GROQ_REASONING = "low"    # gpt-oss ragiona prima di rispondere: su una pulizia di testo non serve.
+#                           Stesso testo: 3070 token e 10,4 s prima, 29 token e 1,5 s dopo (22/09).
+FMT_CHUNK_CHARS = 1500    # sopra tanti caratteri il testo si formatta a pezzi, tagliati a fine
+#                           frase: nessun pezzo puo' avvicinarsi al tetto di risposta.
+FMT_MIN_RATIO = 0.60      # parole in uscita / parole in entrata sotto cui l'LLM ha riassunto invece
+#                           di pulire: li' vince il dettato grezzo. Su 155 dettature reali lunghe
+#                           almeno 15 parole: mediana 0,96, quinto percentile 0,79, e l'unica sotto
+#                           la soglia e' quella tagliata del 22/09 (0,58). Sul singolo pezzo il
+#                           rapporto oscilla di piu' (un pezzo tutto ripetizioni scende a 0,68 pur
+#                           essendo pulito bene), quindi qui la soglia sta sotto quel percentile:
+#                           deve prendere il riassunto vero, non la pulizia riuscita.
+FMT_RATIO_MIN_WORDS = 60  # sotto questa lunghezza il rapporto non dice niente: togliere gli
+#                           intercalari da una frase corta la accorcia di molto, ed e' giusto cosi'.
+FMT_PARALLEL = 4          # pezzi mandati insieme: un dettato lungo non deve costare la somma delle
+#                           attese (4 pezzi in fila ~6 s, insieme ~2 s). Groq accetta 20 richieste
+#                           al minuto, quindi quattro in volo non toccano il limite.
 
 # formattazione LLM: Groq se disponibile, altrimenti Ollama locale. Toggle AI on = formatta.
 USE_LLM = True           # con Groq e' veloce -> acceso di default
@@ -832,27 +852,115 @@ def groq_transcribe(wav_path, force_lang=None, context=""):
 
 
 def groq_format(text, lang):
-    """Formattazione via Groq (gpt-oss-120b)."""
+    """Formattazione via Groq (gpt-oss-120b). Ritorna (testo, tagliato): `tagliato` e' vero quando
+    la risposta si e' fermata contro il tetto dei token, cioe' finisce a meta'."""
     r = httpx.post("https://api.groq.com/openai/v1/chat/completions",
                    headers={"Authorization": f"Bearer {GROQ_KEY}"}, timeout=GROQ_LLM_TIMEOUT,
                    json={"model": GROQ_LLM_MODEL, "temperature": 0.1,
+                         "max_completion_tokens": GROQ_LLM_MAX_OUT,
+                         "reasoning_effort": GROQ_REASONING,
                          "messages": [{"role": "user", "content": build_prompt(text, lang)}]})
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip()
+    ch = r.json()["choices"][0]
+    return (ch["message"]["content"] or "").strip(), ch.get("finish_reason") == "length"
+
+
+def fmt_blocks(text, limit=FMT_CHUNK_CHARS):
+    """Il testo a pezzi non piu' lunghi di `limit`, tagliati dopo un punto (o, se una frase e' piu'
+    lunga del limite, dopo uno spazio): un pezzo corto non puo' esaurire il tetto di risposta."""
+    t = text.strip()
+    if len(t) <= limit:
+        return [t] if t else []
+    out, rest = [], t
+    while len(rest) > limit:
+        win = rest[:limit]
+        cut = max(win.rfind(". "), win.rfind("! "), win.rfind("? "), win.rfind("\n"))
+        cut = cut + 1 if cut > limit // 3 else win.rfind(" ")
+        if cut <= 0:
+            cut = limit
+        out.append(rest[:cut].strip())
+        rest = rest[cut:].strip()
+    if rest:
+        out.append(rest)
+    return [b for b in out if b]
+
+
+def shrunk(src, out):
+    """Vero se la pulizia ha accorciato tanto da aver riassunto: non e' piu' quello che ha detto."""
+    w = len(src.split())
+    return w >= FMT_RATIO_MIN_WORDS and len(out.split()) < FMT_MIN_RATIO * w
+
+
+def fmt_one(b, lang, tag):
+    """Un pezzo ripulito, o None se la risposta non e' fidata (tagliata dal tetto token, riassunta,
+    errore). None qui non perde niente: chi chiama tiene il pezzo come lui l'ha detto."""
+    try:
+        out, cut = groq_retry(lambda: groq_format(b, lang), "fmt")
+    except Exception as e:
+        log(f"   [groq fmt] {tag} {e}")
+        return None
+    if cut:
+        log(f"   [fmt] {tag} risposta tagliata dal tetto token: tengo il dettato")
+        return None
+    if out.strip().upper() == "EMPTY":
+        return ""                         # pezzo senza parlato vero: sparisce, il resto vale
+    if shrunk(b, out):
+        log(f"   [fmt] {tag} riassunto ({len(b.split())} parole -> {len(out.split())}): "
+            f"tengo il dettato")
+        return None
+    return out
+
+
+def groq_format_all(text, lang):
+    """Testo pulito e COMPLETO, o None se Groq e' muto. Un dettato lungo si spezza a fine frase e i
+    pezzi partono insieme; il pezzo che torna male resta come l'ha detto lui. Mai una meta' scritta
+    bene al posto del tutto (22/09: sette minuti tornati a meta', persi)."""
+    parts = fmt_blocks(text)
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return fmt_one(parts[0], lang, "")
+    log(f"   [fmt] testo lungo ({len(text)} caratteri): {len(parts)} pezzi insieme")
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=FMT_PARALLEL) as ex:
+        outs = list(ex.map(lambda ib: fmt_one(ib[1], lang, f"pezzo {ib[0]}/{len(parts)}"),
+                           list(enumerate(parts, 1))))
+    if all(o is None for o in outs):
+        return None                       # Groq muto su tutto: prova il locale, poi le regole
+    keep, raw_kept = [], 0
+    for b, o in zip(parts, outs):
+        if o is None:                     # pezzo non fidato: le parole restano, la pulizia no
+            keep.append(rules_clean(b))
+            raw_kept += 1
+        elif o:
+            keep.append(o)
+    if raw_kept:
+        log(f"   [fmt] {raw_kept} pezzo/i su {len(parts)} incollati come detti")
+        fmt_warn()
+    if not keep:
+        return "EMPTY"
+    sep = chr(10) if any(chr(10) in k for k in keep) else " "
+    return sep.join(keep)
+
+
+def fmt_warn():
+    """Due note calanti: il testo e' tutto li', ma incollato come detto, non ripulito."""
+    threading.Thread(target=lambda: (beep(700, 80), beep(500, 130)), daemon=True).start()
 
 
 def format_text(text, lang):
     if USE_LLM:
         if USE_GROQ:
-            try:
-                out = groq_retry(lambda: groq_format(text, lang), "fmt")
-                if out:
-                    return out
-            except Exception as e:
-                log(f"   [groq fmt] fallback locale: {e}")
+            out = groq_format_all(text, lang)
+            if out:
+                return out
         out = llm_format(text, lang)
-        if out:
+        if out and not shrunk(text, out):
             return out
+        if out:
+            log(f"   [llm] riassunto ({len(text.split())} parole -> {len(out.split())}): scartato")
+        log("   [fmt] incollo il dettato com'e': tutte le parole ci sono, la pulizia no")
+        fmt_warn()
     return rules_clean(text)
 
 
@@ -879,9 +987,14 @@ def groq_edit(sel, instr):
     r = httpx.post("https://api.groq.com/openai/v1/chat/completions",
                    headers={"Authorization": f"Bearer {GROQ_KEY}"}, timeout=GROQ_LLM_TIMEOUT,
                    json={"model": GROQ_LLM_MODEL, "temperature": 0.2,
+                         "max_completion_tokens": GROQ_LLM_MAX_OUT,
+                         "reasoning_effort": GROQ_REASONING,
                          "messages": [{"role": "user", "content": EDIT_PROMPT.format(sel=sel, instr=instr)}]})
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip()
+    ch = r.json()["choices"][0]
+    if ch.get("finish_reason") == "length":   # meta' testo al posto della selezione = testo perso
+        raise RuntimeError("risposta tagliata dal tetto token")
+    return (ch["message"]["content"] or "").strip()
 
 
 def edit_transform(sel, instr):
@@ -1026,6 +1139,17 @@ def _retryable(e):
     return isinstance(e, (httpx.TransportError, OSError))
 
 
+def _retry_after(e, default):
+    """L'attesa chiesta da Groq quando manda 429 (header `retry-after`, secondi), o quella di
+    default. Aspettare meno del dovuto vuol dire spendere i tentativi a vuoto: misurato il 22/09,
+    il secchio dei token si ricarica in ~14 s, i tentativi ciechi duravano 0,6 e 1,8 s."""
+    try:
+        ra = float(e.response.headers.get("retry-after", ""))
+        return max(default, min(ra + 0.3, GROQ_LLM_TIMEOUT / 2))
+    except Exception:
+        return default
+
+
 def groq_retry(fn, what):
     """Esegue fn() ritentando gli errori transitori: la rete che cade non deve costare la dettatura."""
     for i in range(GROQ_TRIES):
@@ -1036,7 +1160,7 @@ def groq_retry(fn, what):
         except Exception as e:
             if not _retryable(e) or i == GROQ_TRIES - 1:
                 raise
-            wait = 0.6 * (3 ** i)
+            wait = _retry_after(e, 0.6 * (3 ** i))
             log(f"   [groq {what}] tentativo {i + 1}/{GROQ_TRIES} fallito ({e}) — riprovo tra {wait:.1f}s")
             time.sleep(wait)
 
@@ -1249,6 +1373,30 @@ def stt_net_failed():
     return bool(getattr(_stt_net, "failed", False))
 
 
+DERAIL_CHUNK_SEC = 60    # pezzi corti per il secondo tentativo quando la trascrizione deraglia
+DERAIL_MIN_RUN = 60      # parole di fila senza punteggiatura sotto cui non vale la pena sospettare
+# parole italiane che esistono solo con l'accento: se compaiono tronche, il decoder sta perdendo pezzi
+DERAIL_TRONCHE = re.compile(r"(?<![\w'’])(pu|pi|perch|gi|cos|citt|qualit|priorit|realt|verit|"
+                            r"universit|attivit|possibilit|necessit|libert|societ|sar|avr|potr|dovr|"
+                            r"vorr|sapr|andr|verr|met|cio)(?![\w'’])")
+DERAIL_PUNCT = re.compile(r"[.,;:!?]")
+
+
+def derail_score(text, min_run=DERAIL_MIN_RUN):
+    """Whisper, su un audio lungo e parlato di fila, ogni tanto perde il filo: smette di mettere
+    punteggiatura e insieme lascia cadere accenti e parole corte ("pu portare", "perch va").
+    L'impronta e' la coppia: una corsa lunga di parole senza punteggiatura CON dentro parole
+    italiane tronche. Ritorna le parole della corsa peggiore, 0 se il testo e' sano.
+    Misurato su 296 dettature reali (22/09): scatta su 4, tutte e quattro vere."""
+    ws, start, worst = text.split(), 0, 0
+    for i, w in enumerate(ws + ["."]):
+        if DERAIL_PUNCT.search(w):
+            if i - start >= min_run and DERAIL_TRONCHE.search(" ".join(ws[start:i])):
+                worst = max(worst, i - start)
+            start = i + 1
+    return worst
+
+
 def stt(wav_path, a16, t0):
     """Trascrizione: Groq (con ritentativi, e a pezzi se l'audio e' grande), poi locale offline."""
     _stt_net.failed = False
@@ -1267,6 +1415,18 @@ def stt(wav_path, a16, t0):
                     text, lang = groq_transcribe_long(a16, SR, force_lang="it")
                 else:
                     text, lang = groq_retry(lambda: groq_transcribe(wav_path, force_lang="it"), "stt")
+            n = derail_score(text)
+            if n and not flags["cancel"]:
+                log(f"   [deragliata] {n} parole di fila senza punteggiatura e con accenti caduti: "
+                    f"rifaccio a pezzi da {DERAIL_CHUNK_SEC}s")
+                t2, l2 = groq_transcribe_long(a16, SR, force_lang=lang or None,
+                                              chunk_sec=DERAIL_CHUNK_SEC)
+                n2 = derail_score(t2)
+                if t2 and not flags["cancel"] and n2 < n:
+                    text, lang = t2, (lang or l2)
+                    log(f"   [deragliata] recuperata: {n} -> {n2 if n2 else 'pulita'}")
+                else:
+                    log(f"   [deragliata] il secondo tentativo non e' meglio ({n2}): tengo il primo")
             log(f"   [groq/{lang}] {time.perf_counter()-t0:.2f}s | '{text}'")
         except Exception as e:
             groq_err = True
