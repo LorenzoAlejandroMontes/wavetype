@@ -45,6 +45,7 @@ import win32event
 import winerror
 import keyboard
 import math
+import paths                          # dove stanno i file: accanto al sorgente, o %APPDATA% da eseguibile
 # Motore dell'anteprima live. "local" = live_local.py (Nemotron in streaming sulla CPU: parola a
 # video in 0,40 s di mediana, nessuna richiesta di rete); "groq" = live_engine.py (pezzi rimandati
 # a Groq, bocciato alla prova del 19/09). Per tornare a Groq basta cambiare questa riga.
@@ -107,7 +108,7 @@ CPU_THREADS = 8                     # core fisici: piu' thread = contesa e piu' 
 # --- Groq (cloud gratis, veloce): STT + formattazione. Fallback locale se assente/offline. ---
 def _load_groq_key():
     try:
-        k = open("groq_key.txt", encoding="utf-8").read().strip()
+        k = open(paths.config("groq_key.txt"), encoding="utf-8").read().strip()
         return k if k.startswith("gsk_") else None
     except Exception:
         return None
@@ -163,7 +164,7 @@ LLM_PROMPT = (
 
 def _load_vocab():
     try:
-        return [l.strip() for l in open("vocab.txt", encoding="utf-8")
+        return [l.strip() for l in open(paths.config("vocab.txt"), encoding="utf-8")
                 if l.strip() and not l.lstrip().startswith("#")]
     except Exception:
         return []
@@ -177,9 +178,10 @@ def build_prompt(text, lang):
     vocab = f"- preserva questi termini/nomi se compaiono: {VOCAB};\n" if VOCAB else ""
     return LLM_PROMPT.format(lang=langname, vocab=vocab, text=text)
 BEAM = 1                 # beam_size=1 -> decodifica piu' veloce (dettatura, non serve beam largo)
-HISTORY = "wavetype_history.txt"
-WAV_OUT = "last_rec.wav"
-REC_DIR = "recordings"        # archivio: ogni registrazione salvata qui, mai sovrascritta
+HISTORY = paths.state("wavetype_history.txt")
+WAV_OUT = paths.state("last_rec.wav")
+LOG_FILE = paths.state("wavetype.log")
+REC_DIR = paths.state("recordings")      # archivio: ogni registrazione salvata qui, mai sovrascritta
 REC_KEEP_DAYS = 7             # le registrazioni piu' vecchie di cosi' vengono cancellate
 GROQ_MAX_BYTES = 20 * 1024 * 1024   # oltre questa soglia l'audio va spezzato (Groq rifiuta ~25MB)
 CHUNK_SEC = 540               # durata dei pezzi quando si spezza: 9 min ~= 17MB; col margine di
@@ -247,7 +249,7 @@ def log(msg):
     except Exception:
         pass
     try:
-        with open("wavetype.log", "a", encoding="utf-8") as f:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(str(msg) + "\n")
     except Exception:
         pass
@@ -1768,7 +1770,7 @@ SKINS = ["dog", "face", "orb"]     # cane · faccina che segue il mouse · palli
 
 def _load_skin():
     try:
-        s = open("skin.txt", encoding="utf-8").read().strip()
+        s = open(paths.config("skin.txt"), encoding="utf-8").read().strip()
         return s if s in SKINS else "dog"
     except Exception:
         return "dog"
@@ -1776,7 +1778,7 @@ def _load_skin():
 
 def _save_skin(s):
     try:
-        with open("skin.txt", "w", encoding="utf-8") as f:
+        with open(paths.config("skin.txt"), "w", encoding="utf-8") as f:
             f.write(s)
     except Exception:
         pass
@@ -1793,7 +1795,7 @@ def round_rect(c, x1, y1, x2, y2, r, **kw):
 
 def _load_hud():
     """Carica le 3 pose ridimensionate + campiona il colore scuro della barra."""
-    full = Image.open("assets/pose-1-attesa.png").convert("RGBA")
+    full = Image.open(paths.resource("assets/pose-1-attesa.png")).convert("RGBA")
     W, H = full.size
     px = full.load()
     rs = gs = bs = n = 0
@@ -1803,7 +1805,7 @@ def _load_hud():
             if a > 200 and r < 60 and g < 60 and b < 60:
                 rs += r; gs += g; bs += b; n += 1
     pill = (rs // n, gs // n, bs // n) if n else (22, 24, 30)
-    poses = [Image.open(f).convert("RGBA").resize((HUD, HUD), Image.LANCZOS)
+    poses = [Image.open(paths.resource(f)).convert("RGBA").resize((HUD, HUD), Image.LANCZOS)
              for f in ("assets/pose-1-attesa.png", "assets/pose-2-registra.png", "assets/pose-3-elabora.png")]
     return poses, pill
 

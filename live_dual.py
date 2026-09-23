@@ -38,6 +38,7 @@ from datetime import date
 
 import live_engine
 import live_local
+import paths
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -81,7 +82,7 @@ class UsageStore:
     e comunque il caso peggiore e' un giorno che riparte da zero."""
 
     def __init__(self, path=None, day=None, log=print):
-        self.path = path or os.path.join(HERE, USAGE_FILE)
+        self.path = path or paths.state(USAGE_FILE, HERE)
         self.day = day or _today
         self.log = log
         self.days = self._read()

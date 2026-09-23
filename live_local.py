@@ -40,8 +40,10 @@ import time
 
 import numpy as np
 
+import paths
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-MODELS_DIR = os.path.join(HERE, "models")
+MODELS_DIR = paths.state("models", HERE)   # eseguibile: %LOCALAPPDATA%\Wavetype\models
 
 # ---- CONFIG ----
 SR = 16000

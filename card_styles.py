@@ -26,8 +26,10 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+import paths
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
-FONT_DIR = os.path.join(ROOT, "assets", "fonts")
+FONT_DIR = paths.resource(os.path.join("assets", "fonts"), ROOT)
 
 STYLES = ("stamp", "glyph", "signal")
 DEFAULT_STYLE = "signal"

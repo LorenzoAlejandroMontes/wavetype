@@ -67,12 +67,13 @@ import caret as caret_mod
 import card_styles as cs
 import edit_chips as ec
 from caret import dpi_scope
+import paths
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # ------------------------------------------------------------------ stili (contratto con wavetype.py)
 STYLES = cs.STYLES                      # ("stamp", "glyph", "signal")
-STYLE_FILE = os.path.join(ROOT, "card_style.txt")
+STYLE_FILE = paths.config("card_style.txt", ROOT)
 PHASES = cs.PHASES
 # Edit Mode: le fasi che accetta set_phase() quando la card e' aperta con open_edit().
 # Dentro diventano "e_<fase>" (cs.EDIT_MODES) cosi' non incrociano mai quelle della dettatura.
@@ -210,7 +211,7 @@ def _smooth(p):
 def _skin():
     """La skin dell'HUD, dallo stesso file che scrive wavetype.py. Nel dubbio: 'dog' (il piu' alto)."""
     try:
-        with open(os.path.join(ROOT, "skin.txt"), encoding="utf-8") as f:
+        with open(paths.config("skin.txt", ROOT), encoding="utf-8") as f:
             return f.read().strip()
     except Exception:
         return "dog"
