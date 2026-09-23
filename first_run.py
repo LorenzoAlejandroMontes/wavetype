@@ -14,6 +14,7 @@ La prova della chiave e' la chiamata piu' economica che Groq ha: GET /openai/v1/
 
 Da riga di comando (solo per guardarla, niente viene salvato):
   python first_run.py --shot out.png [--state idle|typed|checking|invalid|network|ok]
+                      [--live downloading:120|extracting:60|ready]   (riga del modello live)
 """
 import ctypes
 import os
@@ -66,6 +67,11 @@ STATUS = {
     "network": ("CAN'T REACH GROQ. CHECK YOUR CONNECTION AND RETRY", ORANGE),
     "ok": ("KEY SAVED. PRESS WIN + CTRL IN ANY APP TO DICTATE", LIME),
 }
+# riga del modello live (model_fetch.py), sotto la chiave salvata: le parole accanto al cursore
+LIVE_LABEL = "LIVE WORDS NEXT TO YOUR CARET"
+LIVE_UNPACK = "UNPACKING"
+LIVE_READY = "READY"
+LIVE_ROW = 20    # px logici: distanza fra la riga di stato e quella del modello live
 
 W = 440          # misure in px logici (96 dpi): si moltiplicano per la scala del monitor
 PAD = 28
@@ -199,10 +205,12 @@ def _wave(img, x0, x1, cy, amp, k, color):
 
 
 class KeyWindow:
-    def __init__(self, save_path, log=print, dry=False):
+    def __init__(self, save_path, log=print, dry=False, live_status=None):
         self.save_path = save_path
         self.log = log
         self.dry = dry
+        self.live_status = live_status   # model_fetch.Fetcher.snapshot, o None (niente riga)
+        self.live_seen = None
         self.result = None
         self.state = "idle"
         self.hover = None
@@ -241,6 +249,8 @@ class KeyWindow:
         y += 24 + 46
         self.y_status = y + 15
         y += 36
+        self.y_live = self.y_status + LIVE_ROW   # riga del modello live: vedi grow_for_live
+        self.grown = False
         self.r_cta = (PAD, y, inner, 48)
         y += 48 + 26
         self.y_foot = y
@@ -307,6 +317,8 @@ class KeyWindow:
         if msg:
             cs.put_center(img, cs.disc(px(2.5), col), px(PAD + 3), px(self.y_status))
             cs.text_center(img, msg, self.f_lab, col, px(PAD + 12), px(self.y_status), px(0.6))
+        if self.state == "ok" and self.grown:
+            self._live_line(img)
         # bottone principale
         x, y, w, h = self.r_cta
         on = self.cta_enabled() or self.state == "checking"
@@ -331,6 +343,81 @@ class KeyWindow:
         ew = cs.label_width("cancel", self.f_key) + px(6)
         self._foot_part(img, ("kbd", "Esc"), px(W - PAD) - ew - self._kbd_w("Esc"), cy)
         return img
+
+    def live_view(self):
+        """(stato, fatto 0..1, testo a destra) del download del modello live, o None se non c'e'
+        niente da dire (nessun download, oppure fermo in errore: la dettatura va comunque)."""
+        if self.live_status is None:
+            return None
+        try:
+            s = self.live_status()
+        except Exception:
+            return None
+        st, done, total = s.get("state"), s.get("done") or 0, s.get("total") or 0
+        frac = min(1.0, done / total) if total else 0.0
+        if st == "ready":
+            return "ready", 1.0, LIVE_READY
+        if st == "extracting":
+            return "extracting", frac, LIVE_UNPACK
+        if st in ("downloading", "idle"):
+            return "downloading", frac, f"{done / 1e6:.0f} / {total / 1e6:.0f} MB"
+        return None
+
+    def _live_line(self, img):
+        """Una riga sommessa sotto "KEY SAVED": le parole live stanno arrivando (MB), poi pronte.
+        Stessa grammatica della riga di stato (pallino + Geist Mono maiuscolo), ma in grigio."""
+        v = self.live_view()
+        if v is None:
+            return
+        px = self.px
+        st, frac, right = v
+        cy = px(self.y_live)
+        ready = st == "ready"
+        cs.put_center(img, cs.disc(px(2.5), LIME if ready else DIM), px(PAD + 3), cy)
+        x = px(PAD + 12)
+        x += cs.text_center(img, LIVE_LABEL, self.f_lab, SOFT if ready else DIM, x, cy, px(0.6))
+        rw = cs.label_width(right, self.f_lab, px(0.6))
+        rx = px(W - PAD) - rw
+        cs.text_center(img, right, self.f_lab, LIME if ready else SOFT, rx, cy, px(0.6))
+        if ready:
+            return
+        # binario sottile fra etichetta e numeri: quanto manca, senza un'altra riga
+        x0, x1 = x + px(12), rx - px(12)
+        if x1 - x0 < px(24):
+            return
+        h = max(2, self.ipx(2))
+        _rrect(img, x0, cy - h / 2, x1 - x0, h, h / 2, RULE)
+        fw = (x1 - x0) * frac
+        if fw >= h:
+            _rrect(img, x0, cy - h / 2, fw, h, h / 2, LIME if st == "extracting" else SOFT)
+
+    def grow_for_live(self):
+        """In "ok", se c'e' un download da mostrare, la finestra si allunga di una riga sotto la
+        riga di stato. Gli altri stati restano identici al disegno di prima (niente buco vuoto
+        fra campo e bottone mentre si incolla la chiave)."""
+        if self.grown or self.live_view() is None:
+            return
+        self.grown = True
+        x, y, w, h = self.r_cta
+        self.r_cta = (x, y + LIVE_ROW, w, h)
+        self.y_foot += LIVE_ROW
+        self.H += LIVE_ROW
+        self.size = (self.ipx(W), self.ipx(self.H))
+        w, h = self.size
+        self.canvas.configure(width=w, height=h)
+        self.root.geometry(f"{w}x{h}")
+
+    def _live_tick(self):
+        """Finestra in "ok": ridisegna solo quando la riga del modello cambia davvero."""
+        try:
+            v = self.live_view()
+            key = None if v is None else (v[0], v[2], int(v[1] * 200))
+            if key != self.live_seen:
+                self.live_seen = key
+                self.redraw()
+            self.root.after(250, self._live_tick)
+        except tk.TclError:                      # finestra chiusa nel frattempo
+            pass
 
     def _kbd_w(self, t):
         return cs.label_width(t, self.f_key) + self.px(12)
@@ -444,6 +531,9 @@ class KeyWindow:
             self.result = key
             self.entry.configure(state="disabled", disabledbackground=self._hex(FIELD),
                                  disabledforeground=self._hex(TEXT))
+            if self.live_status is not None:
+                self.grow_for_live()
+                self._live_tick()
             self.redraw()
             return
         self.redraw()
@@ -562,14 +652,28 @@ class KeyWindow:
         return self.result
 
 
-def ask_for_key(save_path, log=print):
-    """Apre la finestra e aspetta. Torna la chiave (gia' provata e salvata) o None se chiusa."""
-    return KeyWindow(save_path, log=log).run()
+def ask_for_key(save_path, log=print, live_status=None):
+    """Apre la finestra e aspetta. Torna la chiave (gia' provata e salvata) o None se chiusa.
+    `live_status`: snapshot() del download del modello live, mostrato sotto la chiave salvata."""
+    return KeyWindow(save_path, log=log, live_status=live_status).run()
 
 
 # ------------------------------------------------------------------ foto per la revisione
-def _shot(path, state):
-    """Apre la finestra in uno stato, la fotografa com'e' a schermo (ImageGrab), la chiude."""
+def _fake_live(spec):
+    """--live downloading:120 | extracting:60 | ready | error -> uno snapshot() finto (MB)."""
+    if not spec:
+        return None
+    st, _, mb = spec.partition(":")
+    total = 475272949
+    done = int(float(mb or 0) * 1e6) if st != "ready" else total
+    if st == "extracting":
+        done = int(total * float(mb or 0) / 100)
+    return lambda: {"state": st, "done": done, "total": total, "error": None}
+
+
+def _shot(path, state, live=None):
+    """Apre la finestra in uno stato, la fotografa com'e' a schermo (ImageGrab), la chiude.
+    `live` (vedi _fake_live) aggiunge la riga del modello live."""
     from PIL import ImageGrab
 
     def preset(win):
@@ -583,6 +687,7 @@ def _shot(path, state):
             if state == "ok":
                 win.entry.configure(state="disabled", disabledbackground=win._hex(FIELD),
                                     disabledforeground=win._hex(TEXT))
+                win.grow_for_live()
         if state == "hover":
             win.hover = "open"
         win.redraw()
@@ -600,7 +705,7 @@ def _shot(path, state):
         win.root.after(700, grab)
 
     import ctypes.wintypes  # noqa: F401
-    KeyWindow(os.devnull, log=print, dry=True).run(preset=preset)
+    KeyWindow(os.devnull, log=print, dry=True, live_status=_fake_live(live)).run(preset=preset)
 
 
 if __name__ == "__main__":
@@ -608,6 +713,7 @@ if __name__ == "__main__":
     if "--shot" in args:
         out = args[args.index("--shot") + 1]
         st = args[args.index("--state") + 1] if "--state" in args else "idle"
-        _shot(out, st)
+        lv = args[args.index("--live") + 1] if "--live" in args else None
+        _shot(out, st, lv)
     else:
         print(KeyWindow(os.devnull, dry=True).run())
