@@ -1,6 +1,6 @@
 # Build Wavetype for Windows: PyInstaller onedir -> secret check -> Inno Setup installer.
 #
-#   powershell -ExecutionPolicy Bypass -File packaging\build.ps1              # dist\Wavetype-Setup-0.1.0.exe
+#   powershell -ExecutionPolicy Bypass -File packaging\build.ps1              # dist\Wavetype-Setup.exe
 #   powershell -ExecutionPolicy Bypass -File packaging\build.ps1 -WithLocal   # + offline engine (bigger)
 #   powershell -ExecutionPolicy Bypass -File packaging\build.ps1 -ZipOnly     # no Inno Setup: a zip
 #
@@ -67,6 +67,6 @@ if ($ZipOnly -or -not $Iscc) {
 Write-Host "== Inno Setup"
 & $Iscc "/DAppVersion=$Version" packaging\wavetype.iss
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
-$Setup = Join-Path $Root "dist\Wavetype-Setup-$Version.exe"
+$Setup = Join-Path $Root "dist\Wavetype-Setup.exe"   # no version in the name: releases/latest/download/Wavetype-Setup.exe
 $smb = [math]::Round((Get-Item $Setup).Length / 1MB, 1)
 Write-Host "== done: $Setup ($smb MB)"

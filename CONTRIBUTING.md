@@ -41,7 +41,7 @@ powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 
 PyInstaller (onedir, `packaging/wavetype.spec`) builds `dist\Wavetype\`, the script checks that no
 user file and no `gsk_` key made it in, then Inno Setup 6 (`winget install JRSoftware.InnoSetup`)
-turns it into `dist\Wavetype-Setup-<version>.exe`. Without Inno Setup you get a zip instead.
+turns it into `dist\Wavetype-Setup.exe` (the version lives inside the installer, not in its name). Without Inno Setup you get a zip instead.
 To try a build without pressing the global hotkeys, `Wavetype.exe --smoke-test 10` starts
 everything except the hotkeys and quits after 10 seconds (see `wavetype.log`).
 `Wavetype.exe --setup` opens the key window again.
