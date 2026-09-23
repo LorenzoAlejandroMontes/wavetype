@@ -4,7 +4,7 @@
 ; (see paths.py) and survives upgrades; the uninstaller asks before removing it.
 
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.1.1"
 #endif
 #define AppName "Wavetype"
 #define AppExe "Wavetype.exe"
@@ -83,8 +83,10 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then
   begin
-    { silent uninstall keeps the data (default button = No) }
-    if SuppressibleMsgBox(CustomMessage('RemoveData'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then
+    { a silent uninstall (winget, scripts) never asks and keeps the data: /SILENT alone
+      still shows a suppressible box and the uninstall hangs on it (measured 24/09) }
+    if (not UninstallSilent()) and
+       (SuppressibleMsgBox(CustomMessage('RemoveData'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES) then
     begin
       DelTree(ExpandConstant('{userappdata}\Wavetype'), True, True, True);
       DelTree(ExpandConstant('{localappdata}\Wavetype'), True, True, True);

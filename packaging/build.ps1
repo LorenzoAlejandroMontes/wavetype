@@ -8,7 +8,7 @@
 # Outputs go to dist\ (gitignored). The build stops if anything that looks like a user file or a
 # Groq key ends up in it.
 param(
-    [string]$Version = "0.1.0",
+    [string]$Version = "0.1.1",
     [switch]$WithLocal,
     [switch]$ZipOnly
 )
