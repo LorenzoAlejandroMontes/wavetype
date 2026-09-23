@@ -339,7 +339,7 @@ def swallow_win():
 live = {"engine": None, "panel": None, "on": False, "open": False, "expect_paste": False,
         "final": False, "close_at": 0.0, "close_pasted": True, "ui": False, "cmds": [],
         "phase": "", "ending": False, "level": 0.0, "voice_t": 0.0, "text_t": 0.0, "rev": None,
-        "engine_err": None, "edit": False, "recover": False, "hwnd": 0}
+        "engine_err": None, "edit": False, "recover": False, "hwnd": 0, "fetch": None}
 REC_PHASES = ("listening", "live", "paused")   # fasi decise dal loop principale mentre registri
 
 
@@ -380,11 +380,46 @@ def live_preload():
     t0 = time.perf_counter()
     try:
         live_engine.load_backend()
+        live["engine_err"] = None          # anche dopo il download: le parole si accendono qui
         log(f"[live] modello locale pronto in {time.perf_counter() - t0:.1f}s (precaricato)")
     except Exception as e:
         live["engine_err"] = e
         log(f"[live] modello locale non caricato ({e}) — niente parole in anteprima, "
             "dettatura normale")
+
+
+def live_model_present():
+    """C'e' gia' un modello Nemotron completo in models/? (una cartella a meta' non conta)."""
+    import model_fetch
+    d = live_engine.find_model(live_engine.NEMOTRON_GLOB, prefer=live_engine.NEMOTRON_CHUNK)
+    return bool(d and model_fetch.model_ok(d))
+
+
+def live_fetch_start():
+    """All'avvio, PRIMA della finestra della chiave: se il modello dell'anteprima manca, lo scarica
+    in sottofondo (model_fetch.py, ~475 MB) e a download finito chiama live_preload, cosi' le
+    parole si accendono senza riavviare. Fino ad allora engine_ready() e' False: la card resta
+    senza parole, come quando il modello non c'era, e la dettatura non aspetta niente.
+    Senza sherpa-onnx installato (sorgente senza il pacchetto) scaricare non servirebbe: niente.
+    Torna il Fetcher (snapshot() per la finestra del primo avvio) o None."""
+    if not (LIVE and live_engine is not None and LIVE_ENGINE == "local"):
+        return None
+    try:
+        import importlib.util
+        import model_fetch
+        if live_model_present():
+            return None
+        if importlib.util.find_spec("sherpa_onnx") is None:
+            log("[live] sherpa-onnx non installato: il modello live non si scarica")
+            return None
+        live["engine_err"] = "modello live in download"     # prima del worker: niente motore vuoto
+        fx = model_fetch.fetcher(live_engine.MODELS_DIR, log=log, on_ready=live_preload)
+        live["fetch"] = fx
+        fx.start()
+        return fx
+    except Exception as e:
+        log(f"[live] download del modello non avviato: {e}")
+        return None
 
 
 def level_from_rms(r):
@@ -2436,7 +2471,9 @@ def ensure_key(force=False):
         return True
     try:
         import first_run
-        key = first_run.ask_for_key(paths.config("groq_key.txt"), log=log)
+        fx = live["fetch"]                # download del modello live gia' partito (live_fetch_start)
+        key = first_run.ask_for_key(paths.config("groq_key.txt"), log=log,
+                                    live_status=fx.snapshot if fx is not None else None)
     except Exception as e:
         log(f"[setup] finestra della chiave non disponibile: {e}")
         key = None
@@ -2497,6 +2534,7 @@ def main():
         except Exception:
             pass
         log(f"[app] eseguibile {sys.executable} | impostazioni {paths.CONFIG_DIR} | dati {paths.STATE_DIR}")
+    live_fetch_start()                    # prima della finestra della chiave: ne mostra il progresso
     if not ensure_key(force="--setup" in sys.argv[1:]):
         return
     # --smoke-test N: avvio completo (motori, card, UI) ma SENZA il thread dei tasti globali, e
@@ -2512,7 +2550,8 @@ def main():
     elif LIVE:
         log(f"[live] motore anteprima: {LIVE_ENGINE} · stile card: "
             f"{live_panel.load_style()} (Win+Ctrl+T cambia)")
-        threading.Thread(target=live_preload, name="live-preload", daemon=True).start()
+        if live["fetch"] is None:         # col download in corso il precarico lo fa lui, a fine
+            threading.Thread(target=live_preload, name="live-preload", daemon=True).start()
     if WhisperModel is None:
         log(f"[locale] motore offline non disponibile ({_WHISPER_IMPORT_ERR}) — uso solo Groq.")
         if not USE_GROQ:
