@@ -2449,6 +2449,32 @@ def ensure_key(force=False):
     return False
 
 
+def smoke_checks():
+    """--smoke-test: le parti native che un pacchetto puo' perdere per strada, provate davvero.
+    FLAC (PyAV) su 1 s di tono, e con la chiave una trascrizione Groq dello stesso file (una
+    richiesta sola: prova certificati TLS, upload e risposta)."""
+    a = (0.2 * np.sin(np.arange(SR) * 2 * np.pi * 440 / SR)).astype("float32")
+    try:
+        blob = flac_bytes((a * 32767).astype("<i2"), SR)
+        log(f"[smoke] flac ok: {SR * 2} byte di WAV -> {len(blob)} byte")
+    except Exception as e:
+        log(f"[smoke] flac ko: {e}")
+    if not USE_GROQ:
+        return
+    p = paths.state("_smoke.wav")
+    try:
+        save_wav(p, a, SR)
+        text, lang = groq_transcribe(p)
+        log(f"[smoke] groq stt ok (lingua {lang or '?'}, {len(text)} caratteri)")
+    except Exception as e:
+        log(f"[smoke] groq stt ko: {e}")
+    finally:
+        try:
+            os.remove(p)
+        except Exception:
+            pass
+
+
 def _arg_value(name):
     """Valore di un'opzione da riga di comando (--nome valore), None se assente."""
     a = sys.argv[1:]
@@ -2509,6 +2535,7 @@ def main():
     else:
         secs = float(smoke or 8)
         log(f"[smoke] niente tasti globali, esco da solo fra {secs:.0f}s")
+        threading.Thread(target=smoke_checks, daemon=True).start()
         threading.Timer(secs, lambda: flags.__setitem__("quit", True)).start()
     try:
         build_ui()                          # motore alpha (blocca in PumpMessages)

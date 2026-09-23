@@ -543,7 +543,7 @@ class KeyWindow:
             e.bind("<<Paste>>", lambda _e: root.after(1, self.on_key))
             root.bind("<Return>", lambda _e: self.submit())
             root.bind("<Escape>", lambda _e: root.destroy())
-            root.bind("<FocusIn>", lambda ev: self.on_focus_in() if ev.widget is root else None)
+            root.bind("<FocusIn>", self.on_focus_in)      # anche il campo: la toplevel e' nei suoi bindtag
             c.bind("<Motion>", self.on_motion)
             c.bind("<Leave>", lambda _e: (setattr(self, "hover", None), self.redraw()))
             c.bind("<Button-1>", self.on_click)
