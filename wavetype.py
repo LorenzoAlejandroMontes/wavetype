@@ -276,19 +276,38 @@ def input_device_name():
 
 
 def set_mic_max():
-    """Porta il livello input del microfono al 100% (piu' segnale prima della cattura)."""
+    """Porta il livello input del microfono al 100% (piu' segnale prima della cattura).
+    Gira su un thread suo: COM si apre e si chiude qui, e ogni puntatore COM viene rilasciato qui
+    dentro. Prima c'era cast(iface, POINTER(...)): due puntatori allo stesso oggetto con un solo
+    riferimento, quindi un Release di troppo; il garbage collector lo faceva poi sul thread
+    principale e l'eseguibile moriva con access violation (visto 2 avvii su 3 a cache COM vuota,
+    crash.log del 23/09: Release in __del__ durante il GC)."""
+    import gc
+    try:
+        import comtypes
+        comtypes.CoInitialize()
+    except Exception:
+        comtypes = None
+    mic = iface = vol = None
     try:
         from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-        from ctypes import cast, POINTER
         from comtypes import CLSCTX_ALL
         mic = AudioUtilities.GetMicrophone()
         iface = mic.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        vol = cast(iface, POINTER(IAudioEndpointVolume))
+        vol = iface.QueryInterface(IAudioEndpointVolume)      # AddRef vero, non un cast
         before = vol.GetMasterVolumeLevelScalar()
         vol.SetMasterVolumeLevelScalar(1.0, None)
         log(f"[mic] livello {before:.2f} -> 1.00")
     except Exception as e:
         log(f"[mic] impossibile alzare il livello: {e}")
+    finally:
+        mic = iface = vol = None
+        gc.collect()                      # i cicli con dentro oggetti COM si chiudono su QUESTO thread
+        if comtypes is not None:
+            try:
+                comtypes.CoUninitialize()
+            except Exception:
+                pass
 
 
 def _down(vk):
