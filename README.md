@@ -6,18 +6,23 @@
 
 <p align="center">
   <b>Press a hotkey, talk, and clean text lands where you were typing.</b><br>
-  Voice dictation for Windows, in any app, with a live preview next to your caret.
+  Free and open-source alternative to <a href="https://wisprflow.ai">Wispr Flow</a> for Windows, with a live preview next to your caret.
 </p>
 
 <p align="center">
-  <img src="docs/img/hero.png" alt="Wavetype transcribing speech next to the caret, correcting a word as it goes" width="100%">
+  <a href="https://github.com/LorenzoAlejandroMontes/wavetype/releases/latest/download/Wavetype-Setup.exe"><b>⬇ Download Wavetype for Windows</b></a><br>
+  <sub>Install, paste a free Groq key, talk.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/img/demo.gif" alt="Wavetype dictating an email: live words appear on a card next to the caret, then the cleaned text is pasted into the editor" width="100%">
 </p>
 
 <p align="center">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-black">
   <img alt="Platform: Windows" src="https://img.shields.io/badge/platform-Windows-black">
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-black">
-  <img alt="165 tests" src="https://img.shields.io/badge/tests-165%20passing-black">
+  <img alt="183 tests" src="https://img.shields.io/badge/tests-183%20passing-black">
 </p>
 
 ---
@@ -74,7 +79,7 @@ when you run from source).
 
 ### Windows installer
 
-1. Download **`Wavetype-Setup-0.1.0.exe`** from [Releases](https://github.com/LorenzoAlejandroMontes/wavetype/releases).
+1. Download **[`Wavetype-Setup.exe`](https://github.com/LorenzoAlejandroMontes/wavetype/releases/latest/download/Wavetype-Setup.exe)** (every version is in [Releases](https://github.com/LorenzoAlejandroMontes/wavetype/releases)).
 2. Run it. It installs for your user only, so there is no admin prompt. The installer is not
    code-signed yet, so Windows SmartScreen may show *"Windows protected your PC"*: click
    **More info**, then **Run anyway**.
@@ -170,6 +175,12 @@ If nothing was selected, Edit Mode does not open and you get a plain dictation i
 |---|---|---|
 | **Groq** (with a key) | `whisper-large-v3-turbo` | `openai/gpt-oss-120b` |
 | **Local** (no key) | faster-whisper | Ollama, `qwen2.5:7b` |
+
+The live words on the card come from a third, always-local engine: NVIDIA's Nemotron 3.5 streaming
+model (0.6B, int8) running on your CPU through [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx).
+It is downloaded once, in the background, the first time Wavetype starts (475 MB, from the
+sherpa-onnx releases). Dictation works during the download; the words on the card switch on as
+soon as it lands. The pasted text always comes from the engine in the table above.
 
 With a Groq key your **audio is uploaded to Groq** for transcription, and the transcript is sent
 for formatting. Without a key, both steps run on your machine. Groq's free tier has a daily token
