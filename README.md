@@ -232,6 +232,7 @@ That file is gitignored.
 .\.venv\Scripts\python tests\test_context.py
 .\.venv\Scripts\python tests\test_derail.py
 .\.venv\Scripts\python tests\test_packaging.py
+.\.venv\Scripts\python tests\test_model_fetch.py
 ```
 
 Each file prints `n/n ok` and exits non-zero on failure. The ones that need a Groq key skip

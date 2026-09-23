@@ -19,6 +19,7 @@ expectations calibrated: I review pull requests when I can, and I am the only ma
    .\.venv\Scripts\python tests\test_context.py
    .\.venv\Scripts\python tests\test_derail.py
    .\.venv\Scripts\python tests\test_packaging.py
+   .\.venv\Scripts\python tests\test_model_fetch.py
    ```
 
    Each prints `n/n ok`. A pull request that turns one red needs a very good reason.
