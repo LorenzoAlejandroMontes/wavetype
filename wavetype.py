@@ -2407,12 +2407,51 @@ def build_ui_tk():          # FALLBACK: vecchia UI tkinter (taglio-netto), usata
     return root
 
 
+def ensure_key(force=False):
+    """Serve una chiave Groq? Dall'eseguibile si': senza, niente trascrive (il motore locale non
+    e' nel pacchetto), quindi si apre la finestra del primo avvio (first_run.py). Dal sorgente
+    tutto come prima: senza chiave parte il motore locale. `force` (--setup) la apre comunque.
+    False = l'utente ha chiuso la finestra senza chiave: si esce."""
+    global GROQ_KEY, USE_GROQ
+    if not force and (GROQ_KEY or not paths.FROZEN):
+        return True
+    try:
+        import first_run
+        key = first_run.ask_for_key(paths.config("groq_key.txt"), log=log)
+    except Exception as e:
+        log(f"[setup] finestra della chiave non disponibile: {e}")
+        key = None
+    if key:
+        GROQ_KEY, USE_GROQ = key, True
+        return True
+    if GROQ_KEY:                          # --setup chiuso senza cambiare: resta la chiave di prima
+        return True
+    log("[setup] nessuna chiave Groq: esco. Al prossimo avvio la finestra si riapre.")
+    return False
+
+
+def _arg_value(name):
+    """Valore di un'opzione da riga di comando (--nome valore), None se assente."""
+    a = sys.argv[1:]
+    if name in a:
+        i = a.index(name)
+        return a[i + 1] if i + 1 < len(a) else ""
+    return None
+
+
 def main():
     global model, _singleton
     _singleton = win32event.CreateMutex(None, False, "Wavetype_singleton")
     if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
         log("gia' in esecuzione — esco (single instance).")
         return
+    if paths.FROZEN:
+        log(f"[app] eseguibile {sys.executable} | impostazioni {paths.CONFIG_DIR} | dati {paths.STATE_DIR}")
+    if not ensure_key(force="--setup" in sys.argv[1:]):
+        return
+    # --smoke-test N: avvio completo (motori, card, UI) ma SENZA il thread dei tasti globali, e
+    # uscita pulita dopo N secondi. Serve a provare un'installazione senza premere Win+Ctrl.
+    smoke = _arg_value("--smoke-test")
     engine = f"Groq ({GROQ_STT_MODEL} + {GROQ_LLM_MODEL})" if USE_GROQ else f"locale {MODEL}"
     log(f"Python {sys.version.split()[0]} | motore: {engine}")
     log(f"mic: {input_device_name()}")
@@ -2441,7 +2480,12 @@ def main():
     threading.Thread(target=set_mic_max, daemon=True).start()   # COM isolato su thread separato
     if USE_LLM and not USE_GROQ:             # scalda qwen locale solo se Groq non c'e'
         threading.Thread(target=lambda: llm_format("ciao", "it"), daemon=True).start()
-    threading.Thread(target=worker, daemon=True).start()
+    if smoke is None:
+        threading.Thread(target=worker, daemon=True).start()
+    else:
+        secs = float(smoke or 8)
+        log(f"[smoke] niente tasti globali, esco da solo fra {secs:.0f}s")
+        threading.Timer(secs, lambda: flags.__setitem__("quit", True)).start()
     try:
         build_ui()                          # motore alpha (blocca in PumpMessages)
     except Exception as e:
