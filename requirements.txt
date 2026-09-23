@@ -13,6 +13,9 @@ pycaw
 # Without it, audio is sent as WAV.
 av
 
-# Optional: local live-preview engines. Only needed if you run the preview offline.
-# sherpa-onnx
+# Live words next to the caret (Nemotron streaming on the CPU). The model itself (~475 MB) is
+# downloaded by the app on first run into models/ (model_fetch.py).
+sherpa-onnx>=1.13.8
+
+# Optional: old Italian-only live-preview engine.
 # vosk
