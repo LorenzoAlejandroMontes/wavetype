@@ -17,7 +17,7 @@
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-black">
   <img alt="Platform: Windows" src="https://img.shields.io/badge/platform-Windows-black">
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-black">
-  <img alt="159 tests" src="https://img.shields.io/badge/tests-159%20passing-black">
+  <img alt="165 tests" src="https://img.shields.io/badge/tests-165%20passing-black">
 </p>
 
 ---
@@ -66,10 +66,28 @@ instead of saying anything.
   <img src="docs/img/styles.png" alt="The three card styles: Stamp, Glyph and Signal" width="70%">
 </p>
 
-Three built-in looks. Put `stamp`, `glyph` or `signal` in a file called `card_style.txt` next to
-`wavetype.py`.
+Three built-in looks. Press **Win+Ctrl+T** to cycle them, or put `stamp`, `glyph` or `signal` in a
+file called `card_style.txt` (in `%APPDATA%\Wavetype` for the installed app, next to `wavetype.py`
+when you run from source).
 
 ## Install
+
+### Windows installer
+
+1. Download **`Wavetype-Setup-0.1.0.exe`** from [Releases](https://github.com/LorenzoAlejandroMontes/wavetype/releases).
+2. Run it. It installs for your user only, so there is no admin prompt. The installer is not
+   code-signed yet, so Windows SmartScreen may show *"Windows protected your PC"*: click
+   **More info**, then **Run anyway**.
+3. On first launch Wavetype asks for a **free Groq API key**. The window has a button that opens
+   [console.groq.com/keys](https://console.groq.com/keys); create a key, paste it, and it is checked
+   with Groq and saved. Then press **Win+Ctrl** in any app and talk.
+
+The installed app keeps your settings (`groq_key.txt`, `vocab.txt`, `card_style.txt`) in
+`%APPDATA%\Wavetype`, and recordings, log and history in `%LOCALAPPDATA%\Wavetype`. Upgrading keeps
+them; uninstalling (Settings, Apps) asks whether to remove them too. The installer build runs on
+Groq; the offline engine below is for the from-source install.
+
+### From source
 
 You need **Python 3.11+** on Windows.
 
@@ -175,7 +193,8 @@ on the 1.4% of dictations where it triggers.
 
 ## Custom vocabulary
 
-Put one name or bit of jargon per line in `vocab.txt` next to `wavetype.py`. It is passed to both
+Put one name or bit of jargon per line in `vocab.txt` (in `%APPDATA%\Wavetype` for the installed
+app, next to `wavetype.py` from source). It is passed to both
 the transcription and the formatting pass, so proper nouns come out spelled the way you spell them.
 That file is gitignored.
 
@@ -201,6 +220,7 @@ That file is gitignored.
 .\.venv\Scripts\python tests\test_edit_card.py
 .\.venv\Scripts\python tests\test_context.py
 .\.venv\Scripts\python tests\test_derail.py
+.\.venv\Scripts\python tests\test_packaging.py
 ```
 
 Each file prints `n/n ok` and exits non-zero on failure. The ones that need a Groq key skip

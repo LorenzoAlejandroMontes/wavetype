@@ -18,6 +18,7 @@ expectations calibrated: I review pull requests when I can, and I am the only ma
    .\.venv\Scripts\python tests\test_edit_card.py
    .\.venv\Scripts\python tests\test_context.py
    .\.venv\Scripts\python tests\test_derail.py
+   .\.venv\Scripts\python tests\test_packaging.py
    ```
 
    Each prints `n/n ok`. A pull request that turns one red needs a very good reason.
@@ -31,6 +32,19 @@ expectations calibrated: I review pull requests when I can, and I am the only ma
 
    It renders every style in every phase to `tests/panel_out/`. If a phase looks wrong there,
    it looks wrong on screen.
+
+## Building the installer
+
+```bash
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+```
+
+PyInstaller (onedir, `packaging/wavetype.spec`) builds `dist\Wavetype\`, the script checks that no
+user file and no `gsk_` key made it in, then Inno Setup 6 (`winget install JRSoftware.InnoSetup`)
+turns it into `dist\Wavetype-Setup-<version>.exe`. Without Inno Setup you get a zip instead.
+To try a build without pressing the global hotkeys, `Wavetype.exe --smoke-test 10` starts
+everything except the hotkeys and quits after 10 seconds (see `wavetype.log`).
+`Wavetype.exe --setup` opens the key window again.
 
 ## Things that would genuinely help
 
