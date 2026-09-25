@@ -11,7 +11,7 @@ VSVersionInfo(
       StringStruct('LegalCopyright', 'MIT License'),
       StringStruct('OriginalFilename', 'Wavetype.exe'),
       StringStruct('ProductName', 'Wavetype'),
-      StringStruct('ProductVersion', '0.1.0')])]),
+      StringStruct('ProductVersion', '0.1.1')])]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
   ]
 )
