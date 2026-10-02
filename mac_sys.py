@@ -360,6 +360,31 @@ def set_accessory():
         return False
 
 
+def dark_titlebar(title, rgb):
+    """Barra del titolo della finestra Tk `title` scura e dello stesso colore del fondo, come
+    _dark_titlebar su Windows: aspetto DarkAqua (titolo chiaro) e barra trasparente sul colore
+    della finestra. Torna True se la finestra c'era."""
+    try:
+        from AppKit import NSApplication, NSAppearance, NSColor
+        try:
+            from AppKit import NSAppearanceNameDarkAqua as dark_name
+        except ImportError:
+            dark_name = "NSAppearanceNameDarkAqua"
+        dark = NSAppearance.appearanceNamed_(dark_name)
+        r, g, b = (c / 255.0 for c in rgb[:3])
+        for w in NSApplication.sharedApplication().windows():
+            if str(w.title() or "") != title:
+                continue
+            w.setAppearance_(dark)
+            w.setTitlebarAppearsTransparent_(True)
+            w.setBackgroundColor_(NSColor.colorWithSRGBRed_green_blue_alpha_(r, g, b, 1.0))
+            return True
+        log(f"[first_run] barra scura: nessuna finestra '{title}'")
+    except Exception as e:
+        log(f"[first_run] barra scura non applicata: {e}")
+    return False
+
+
 def ax_trusted(prompt=False):
     """Permesso Accessibilita'. Con prompt=True macOS mostra il suo avviso (una volta)."""
     try:

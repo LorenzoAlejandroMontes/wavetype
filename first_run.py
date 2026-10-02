@@ -170,6 +170,10 @@ class _SystemDpi:
 
 def _dark_titlebar(root):
     """Barra del titolo scura e dello stesso nero della finestra (Windows 11; su 10 solo scura)."""
+    if IS_MAC:
+        import mac_sys
+        mac_sys.dark_titlebar(root.title(), BG)
+        return
     try:
         hwnd = _user.GetParent(root.winfo_id()) or root.winfo_id()
         dwm = ctypes.windll.dwmapi
