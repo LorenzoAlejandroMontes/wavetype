@@ -11,7 +11,9 @@ pycaw
 
 # Optional: FLAC encoding before upload (smaller, faster uploads).
 # Without it, audio is sent as WAV.
-av
+# <19: av 19 dropped av.open(metadata_errors=...), which faster-whisper 1.2.1 (the latest) still
+# passes, so the offline engine fails on every file (TypeError, measured 2026-10-02).
+av<19
 
 # Live words next to the caret (Nemotron streaming on the CPU). The model itself (~475 MB) is
 # downloaded by the app on first run into models/ (model_fetch.py).
