@@ -675,7 +675,9 @@ def test_worker_mac_vero_in_darwin():
     eq(out["same_tick_r_rec"], False, "Ctrl+Option+R nello stesso giro: niente dettatura")
     eq(out["same_tick_r"] in (["recover"], ["start", "recover", "stop"]), True,
        f"Ctrl+Option+R nello stesso giro: {out['same_tick_r']}")
-    eq(out["quit_calls"], ["start"], "Q arrivata mentre l'avvio era in corso")
+    # runner lento: la Q puo' arrivare prima che il worker veda Ctrl+Option, e l'app esce senza
+    # avviare (run #4 della CI). Entrambi giusti; mai due avvii o uno stop.
+    eq(out["quit_calls"] in ([], ["start"]), True, f"Ctrl+Option+Q: {out['quit_calls']}")
     eq((out["quit"], out["alive"]), (True, False), "Ctrl+Option+Q breve durante l'avvio esce")
 
 
