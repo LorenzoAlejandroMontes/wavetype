@@ -1,0 +1,86 @@
+[app] eseguibile /Users/runner/work/wavetype/wavetype/dist/Wavetype.app/Contents/MacOS/Wavetype | impostazioni /Users/runner/Library/Application Support/Wavetype | dati /Users/runner/Library/Application Support/Wavetype
+Python 3.12.10 | motore: locale small
+mic: Apple Virtual Sound Device
+[modello] manca il modello live: lo scarico (475 MB, ripresa da 0 MB) in /Users/runner/Library/Application Support/Wavetype/models
+[live] motore anteprima: local · stile card: signal (Win+Ctrl+T cambia)
+gia' in esecuzione — esco (single instance).
+PRONTO. Fn (o Ctrl+Option): tocca per registrare/fermare, tieni premuto per parlare finche' tieni. Ctrl+Option+R recupera l'ultima registrazione, +T cambia lo stile della card, +Q chiude.
+   [llm] non disponibile (<urlopen error [Errno 61] Connection refused>) — uso le regole
+[tasti] tap attivo: Fn o Ctrl+Option per dettare
+   [caret] prewarm ax=True
+[mac] loop principale avviato (Tk, radice nascosta)
+[modello] scaricato in 14s (35.0 MB/s), spacchetto
+   [caret] ax-bounds -> (113, 155, 1, 14) in 24 ms
+   [panel] aperto stile=signal scala=1.00 dpi=96 caret=(113, 155, 1, 14) font=Geist Regular box=(93, 181, 350, False, None)
+
+=== REC — target: 'TextEdit' | mic: 'Apple Virtual Sound Device' ===
+   audio 8.2s @ 48000Hz | rms 0.1205 gain x1.0 picco 0.2400
+   [small/en] 17.26s | 'Hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?'
+   [llm] non disponibile (<urlopen error [Errno 61] Connection refused>) — uso le regole
+   [fmt] incollo il dettato com'e': tutte le parole ci sono, la pulizia no
+   [insert] accodato (17.27s)
+   [caret] ax-bounds -> (516, 155, 1, 14) in 12 ms
+
+=== REC — target: 'TextEdit' | mic: 'Apple Virtual Sound Device' ===
+   [caret] ax-bounds -> (516, 155, 1, 14) in 1 ms
+   [panel] aperto stile=signal scala=1.00 dpi=96 caret=(516, 155, 1, 14) font=Geist Regular box=(496, 181, 350, False, None)
+uscita.
+gia' in esecuzione — esco (single instance).
+[app] eseguibile /Users/runner/work/wavetype/wavetype/dist/Wavetype.app/Contents/MacOS/Wavetype | impostazioni /Users/runner/Library/Application Support/Wavetype | dati /Users/runner/Library/Application Support/Wavetype
+Python 3.12.10 | motore: locale small
+[modello] manca il modello live: lo scarico (475 MB, ripresa da 475 MB) in /Users/runner/Library/Application Support/Wavetype/models
+mic: Apple Virtual Sound Device
+[modello] scaricato in 0s (0.0 MB/s), spacchetto
+[live] motore anteprima: local · stile card: signal (Win+Ctrl+T cambia)
+gia' in esecuzione — esco (single instance).
+PRONTO. Fn (o Ctrl+Option): tocca per registrare/fermare, tieni premuto per parlare finche' tieni. Ctrl+Option+R recupera l'ultima registrazione, +T cambia lo stile della card, +Q chiude.
+   [llm] non disponibile (<urlopen error [Errno 61] Connection refused>) — uso le regole
+[tasti] tap attivo: Fn o Ctrl+Option per dettare
+   [caret] prewarm ax=True
+[mac] loop principale avviato (Tk, radice nascosta)
+
+=== REC — target: 'TextEdit' | mic: 'Apple Virtual Sound Device' ===
+   [caret] ax-bounds -> (142, 184, 1, 14) in 10 ms
+   [panel] aperto stile=signal scala=1.00 dpi=96 caret=(142, 184, 1, 14) font=Geist Regular box=(122, 210, 379, False, None)
+   audio 8.1s @ 48000Hz | rms 0.1212 gain x1.0 picco 0.2400
+   [small/en] 16.18s | 'Hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?'
+   [llm] non disponibile (<urlopen error [Errno 61] Connection refused>) — uso le regole
+   [fmt] incollo il dettato com'e': tutte le parole ci sono, la pulizia no
+   [insert] accodato (16.20s)
+   [caret] ax-bounds -> (545, 184, 1, 14) in 1 ms
+
+=== REC — target: 'TextEdit' | mic: 'Apple Virtual Sound Device' ===
+   [caret] ax-bounds -> (545, 184, 1, 14) in 1 ms
+   [panel] aperto stile=signal scala=1.00 dpi=96 caret=(545, 184, 1, 14) font=Geist Regular box=(525, 210, 379, False, None)
+uscita.
+gia' in esecuzione — esco (single instance).
+[app] eseguibile /Users/runner/work/wavetype/wavetype/dist/Wavetype.app/Contents/MacOS/Wavetype | impostazioni /Users/runner/Library/Application Support/Wavetype | dati /Users/runner/Library/Application Support/Wavetype
+Python 3.12.10 | motore: locale small
+[modello] manca il modello live: lo scarico (475 MB, ripresa da 475 MB) in /Users/runner/Library/Application Support/Wavetype/models
+mic: Apple Virtual Sound Device
+[modello] scaricato in 0s (0.0 MB/s), spacchetto
+[live] motore anteprima: local · stile card: signal (Win+Ctrl+T cambia)
+gia' in esecuzione — esco (single instance).
+PRONTO. Fn (o Ctrl+Option): tocca per registrare/fermare, tieni premuto per parlare finche' tieni. Ctrl+Option+R recupera l'ultima registrazione, +T cambia lo stile della card, +Q chiude.
+   [llm] non disponibile (<urlopen error [Errno 61] Connection refused>) — uso le regole
+[tasti] tap attivo: Fn o Ctrl+Option per dettare
+   [caret] prewarm ax=True
+[mac] loop principale avviato (Tk, radice nascosta)
+
+=== REC — target: 'TextEdit' | mic: 'Apple Virtual Sound Device' ===
+   [ctx] cursore a meta' frase, dopo: 'I think '
+   [caret] ax-bounds -> (206, 213, 1, 14) in 8 ms
+   [panel] aperto stile=signal scala=1.00 dpi=96 caret=(206, 213, 1, 14) font=Geist Regular box=(186, 34, 203, True, None)
+   audio 8.2s @ 48000Hz | rms 0.1206 gain x1.0 picco 0.2400
+   [small/en] 20.03s | 'Hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?'
+   [llm] non disponibile (<urlopen error [Errno 61] Connection refused>) — uso le regole
+   [fmt] incollo il dettato com'e': tutte le parole ci sono, la pulizia no
+   [ctx] continua la frase: 'hello Sarah, the meeting moved to Thursd'
+   [insert] accodato (20.05s)
+   [caret] ax-bounds -> (607, 213, 1, 14) in 17 ms
+
+=== REC — target: 'TextEdit' | mic: 'Apple Virtual Sound Device' ===
+   [caret] ax-bounds -> (607, 213, 1, 14) in 5 ms
+   [panel] aperto stile=signal scala=1.00 dpi=96 caret=(607, 213, 1, 14) font=Geist Regular box=(536, 34, 203, True, None)
+uscita.
+gia' in esecuzione — esco (single instance).
