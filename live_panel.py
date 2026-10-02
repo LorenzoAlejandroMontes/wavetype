@@ -1440,6 +1440,9 @@ class LivePanel:
                 self._paint(x, y, img)
                 self._show(True)
                 testhooks.card(x, y, img.size[0], img.size[1], self.mode)
+                if testhooks.events_path():      # solo CI: la stringa non si costruisce mai senza
+                    testhooks.live(" ".join(w.text for w in self.words if w.state == "live"),
+                                   self.mode)
                 self.last_frame_ms = (time.perf_counter() - t0) * 1000
                 if self.last_frame_ms < 9.0:
                     self._prewarm(33.0 - self.last_frame_ms)

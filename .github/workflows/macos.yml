@@ -113,6 +113,69 @@ jobs:
           afconvert -f WAVE -d LEI16@16000 -c 1 build/mac/test.aiff "$RESULTS/test.wav"
           afinfo "$RESULTS/test.wav" | tee "$RESULTS/test_wav_info.txt"
 
+      # The live words on the card come from the streaming model (~475 MB archive). On a first
+      # launch the app downloads it in the background and the dictation does not wait, so in CI the
+      # card never had words. Here it is put where the built app looks for it BEFORE the app starts,
+      # by model_fetch.py itself (the app's own downloader), and cached under the archive's
+      # name + size. A failed download never fails the build: the summary reports it next to
+      # the live_words check. Restore and save are split because actions/cache saves only when
+      # the whole job succeeds (post-if: success() in its action.yml).
+      - name: Live model location and cache key
+        id: live_model_key
+        if: always()
+        run: |
+          python - <<'EOF' >> "$GITHUB_OUTPUT"
+          import os, model_fetch, paths
+          # the folder the frozen .app reads: paths.state("models") with sys.platform darwin
+          print("dir=" + os.path.join(paths._dirs("darwin", True)[1], "models"))
+          print("name=" + model_fetch.NAME)
+          print(f"key=live-model-{model_fetch.NAME}-{model_fetch.SIZE}")
+          EOF
+          cat "$GITHUB_OUTPUT"
+
+      - name: Live model cache (restore)
+        id: live_model_cache
+        if: always() && steps.live_model_key.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.live_model_key.outputs.dir }}/${{ steps.live_model_key.outputs.name }}
+          key: ${{ steps.live_model_key.outputs.key }}
+
+      - name: Live model (model_fetch.py into the app's folder)
+        id: live_model
+        if: always() && steps.live_model_key.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 20
+        env:
+          MODELS: ${{ steps.live_model_key.outputs.dir }}
+          CACHE_HIT: ${{ steps.live_model_cache.outputs.cache-hit }}
+        run: |
+          set -o pipefail
+          export T0="$(date +%s)"
+          # cache hit: "live pronto (gia' presente)" at once; miss: the real download + unpack
+          python model_fetch.py "$MODELS" 2>&1 | tr '\r' '\n' | tee "$RESULTS/logs/live_model.log"
+          python - <<'EOF'
+          import json, os, sys, time
+          import model_fetch
+          d = os.environ["MODELS"]
+          ok = model_fetch.model_ok(os.path.join(d, model_fetch.NAME))
+          out = {"present": ok, "dir": d, "name": model_fetch.NAME,
+                 "cache_hit": os.environ.get("CACHE_HIT") == "true",
+                 "secs": int(time.time()) - int(os.environ["T0"])}
+          json.dump(out, open(os.path.join(os.environ["RESULTS"], "live_model.json"), "w"), indent=2)
+          print(out)
+          sys.exit(0 if ok else 1)
+          EOF
+
+      - name: Live model cache (save)
+        if: always() && steps.live_model.outcome == 'success' && steps.live_model_cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.live_model_key.outputs.dir }}/${{ steps.live_model_key.outputs.name }}
+          key: ${{ steps.live_model_key.outputs.key }}
+
       - name: End-to-end on the built app
         if: always()
         timeout-minutes: 60
@@ -128,6 +191,8 @@ jobs:
 
       - name: Summary
         if: always()
+        env:
+          LIVE_MODEL_OUTCOME: ${{ steps.live_model.outcome }}
         run: python packaging/mac/ci/e2e.py summary
 
       - name: Upload .dmg and results

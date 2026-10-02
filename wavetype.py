@@ -1367,8 +1367,9 @@ def insert_text(hwnd, text):
     if IS_MAC:                        # NSPasteboard + Cmd+V, appunti di prima ripristinati (mac_sys)
         if mac_sys.insert_text(hwnd, text):
             testhooks.emit("pasted", chars=len(text), text=text[:200])
-        else:
-            testhooks.emit("error", where="paste", msg="incolla non riuscito")
+        else:                         # app chiusa o non tornata davanti: testo negli appunti
+            testhooks.emit("error", where="paste",
+                           msg=(mac_sys.PASTE.get("why") or "incolla non riuscito")[:200])
         return
     saved = get_clipboard_text()
     try:
@@ -1912,8 +1913,9 @@ def start_capture_mac():
     """macOS (Fn o Ctrl+Option): come start_capture, ma senza aspettare che i modificatori si
     alzino. Nel modo "tieni premuto" il tasto resta giu' per tutta la dettatura: aspettarlo
     costerebbe 0,7 s di parlato a ogni avvio. Cmd+C (se serve) porta i suoi flag, quindi i
-    modificatori tenuti non lo sporcano. Ctrl+Option+Q/R/T li guarda il worker anche dopo la
-    partenza: annullano la registrazione appena aperta (abort_chord_rec), come su Windows."""
+    modificatori tenuti non lo sporcano. Con Ctrl+Option il worker chiama qui solo dopo la
+    grazia (mac_keys.CTRL_OPT_GRACE_SEC): Q/R/T premute dentro la grazia non fanno partire
+    niente; arrivate dopo, annullano la registrazione appena aperta (abort_chord_rec)."""
     pid = fg_window()
     rec["hwnd"] = pid                  # copy_selection (AX) chiede la selezione a questa app
     sel = copy_selection()
@@ -1927,14 +1929,20 @@ def start_capture_mac():
 def worker_mac():
     """macOS: stesso polling del worker di Windows, sul dizionario del tap (mac_keys).
     Fn e Ctrl+Option sono ibridi (mac_keys.Hybrid): tocco = toggle come Win+Ctrl, tenuto
-    premuto oltre HOLD_SEC = parli finche' tieni. ESC, tasti 1-3, promemoria: come su Windows."""
+    premuto oltre HOLD_SEC = parli finche' tieni. ESC, tasti 1-3, promemoria: come su Windows.
+    Fn parte alla pressione. Ctrl+Option no: e' anche l'inizio di Ctrl+Option+Q/R/T, quindi
+    parte dopo CTRL_OPT_GRACE_SEC se resta giu', o al rilascio se e' un tocco piu' breve (come
+    Windows, che aspetta il rilascio dei modificatori). Dentro la grazia Q/R/T o un altro tasto:
+    nessuna dettatura, ne' bip ne' card. Il tenuto si misura sempre dalla pressione vera."""
     hy = mac_keys.Hybrid(mac_keys.HOLD_SEC)
+    grace = None                        # Ctrl+Option giu', partenza in attesa: istante della pressione
     while not flags["quit"]:
         cmd = mac_keys.take_cmd()       # dalla coda del tap: anche se premuto mentre si avviava
         if cmd == mac_keys.KC_Q:        # Ctrl+Option+Q -> esci del tutto
             flags["quit"] = True
             break
         if cmd in (mac_keys.KC_R, mac_keys.KC_T):
+            grace = None                # dentro la grazia: la dettatura non parte proprio
             if cmd == mac_keys.KC_R:    # Ctrl+Option+R -> rielabora l'ultima registrazione
                 chord_recover()
             else:                       # Ctrl+Option+T -> stile della card
@@ -1943,6 +1951,11 @@ def worker_mac():
             hy.reset()                  # va vista, se no il reset non la copre e al giro dopo
             time.sleep(0.02)            # partirebbe una dettatura. Il rilascio non e' un toggle
             continue
+        if grace is not None and mac_keys.STATE.other:
+            # Ctrl+Option+frecce dentro la grazia: era un modificatore, non si e' aperto niente
+            log("   [tasti] Ctrl+Option usato con un altro tasto: nessuna dettatura")
+            grace = None
+            hy.reset()
         if hy.state == "pressed" and mac_keys.STATE.other:
             # Fn+Canc, Fn+frecce, Ctrl+Option+frecce: il chord era un modificatore, non una
             # dettatura. Come per R/T: la registrazione appena aperta si annulla.
@@ -1950,7 +1963,7 @@ def worker_mac():
             log("   [tasti] chord usato con un altro tasto: dettatura annullata")
             abort_chord_rec()
             hy.reset()
-        if hy.active() and not rec["held"]:
+        if hy.active() and not rec["held"] and grace is None:
             hy.reset()                  # finita altrove (ESC, tasto 1-3, silenzio): si riparte da capo
         edit_on = rec["held"] and rec["edit"]
         if edit_on != bool(edit_keys["hooks"]):     # tasti 1-3 solo mentre registri un Edit
@@ -1988,6 +2001,13 @@ def worker_mac():
             flags["dismiss"] = True
             hy.reset()
         ev = hy.feed(*mac_keys.chord_edge())     # istante vero del tasto, non di questo giro
+        if ev == "start" and not rec["held"] and mac_keys.chord_source() == "ctrl_option":
+            grace, ev = hy.t, None      # Ctrl+Option: si aspetta la grazia (Fn invece parte ora)
+        if grace is not None:
+            if not hy.active():         # reset altrove (ESC, comando) o rilascio dopo HOLD_SEC
+                grace = None
+            elif hy.state == "latched" or time.perf_counter() - grace >= mac_keys.CTRL_OPT_GRACE_SEC:
+                grace, ev = None, "start"   # tocco gia' rilasciato (toggle), o tenuto oltre la grazia
         if ev == "start" and not rec["held"]:
             testhooks.emit("hotkey", what="start")
             try:

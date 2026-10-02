@@ -42,6 +42,11 @@ T_KEYDOWN, T_KEYUP, T_FLAGS = 10, 11, 12
 T_DISABLED_TIMEOUT, T_DISABLED_USER = 0xFFFFFFFE, 0xFFFFFFFF
 
 HOLD_SEC = 0.4            # Fn/Ctrl+Option: sotto = tocco (resta in ascolto), sopra = tieni premuto
+# Solo Ctrl+Option: la dettatura parte dopo questa finestra di grazia (o al rilascio, se prima).
+# Ctrl+Option e' anche l'inizio di Ctrl+Option+Q/R/T: partendo alla pressione si sentiva il bip e
+# si vedeva la card per un attimo prima del comando. Dentro la grazia Q/R/T (o un altro tasto)
+# annullano la partenza prima che avvenga. Deve restare sotto HOLD_SEC. Fn resta immediato.
+CTRL_OPT_GRACE_SEC = 0.3
 RETRY_SEC = 2.0           # tap non creato (permesso mancante): si riprova ogni tanti secondi
 
 # VK di Windows -> stato del Mac, cosi' le funzioni condivise di wavetype.py (_down(vk))
@@ -71,6 +76,9 @@ class KeyState:
     Ctrl+Option+frecce): allora Fn era un modificatore, non una dettatura. Si azzera a ogni
     nuova pressione del chord.
 
+    src = chi ha fatto l'ultima pressione del chord: "fn" o "ctrl_option" (Fn vince se sono giu'
+    insieme). Il worker fa partire subito Fn e aspetta la grazia per Ctrl+Option.
+
     cmds = Q/R/T premuti con Ctrl+Option, ed ESC, in coda finche' il worker li prende (take_cmd).
     Il worker li guardava "giu' adesso": mentre apre la registrazione e' fermo, e un tocco piu'
     breve di quel tempo si perdeva (run #2 della CI Mac: Ctrl+Option+Q non chiudeva l'app)."""
@@ -80,18 +88,21 @@ class KeyState:
         self.flags = 0
         self.fn_down = False
         self.edge = (False, 0.0)
+        self.src = ""
         self.other = False
         self.swallow = {}        # keycode -> callback(keycode); keyDown e keyUp non arrivano all'app
         self.chord_letters = (KC_Q, KC_R, KC_T)
         self.cmds = deque(maxlen=16)    # append/popleft atomici: due thread senza lock
 
     def _set(self, fl, fn, now):
-        """Nuovi modificatori. L'ordine conta (un altro thread legge senza lock): prima `other`,
-        poi `edge`, poi i flag; chi vede la nuova pressione in `edge` vede gia' `other` azzerato."""
+        """Nuovi modificatori. L'ordine conta (un altro thread legge senza lock): prima `other` e
+        `src`, poi `edge`, poi i flag; chi vede la nuova pressione in `edge` vede gia' `other`
+        azzerato e la sorgente giusta."""
         new = fn or (bool(fl & F_CTRL) and bool(fl & F_OPT))
         if new != self.edge[0]:
             if new:
                 self.other = False
+                self.src = "fn" if fn else "ctrl_option"
             self.edge = (new, time.perf_counter() if now is None else now)
         self.fn_down = fn
         self.flags = fl
@@ -236,6 +247,11 @@ def chord_down():
 def chord_edge():
     """(chord giu'?, istante dell'ultimo cambio), letti insieme (una tupla sola)."""
     return STATE.edge
+
+
+def chord_source():
+    """"fn" o "ctrl_option": chi ha fatto l'ultima pressione del chord (KeyState.src)."""
+    return STATE.src
 
 
 def down(kc):

@@ -34,6 +34,7 @@ TESTS = ["test_mac_layer", "test_context", "test_live_engine", "test_live_dual",
 READY_TIMEOUT = 600          # the first launch may download the local model
 PASTE_TIMEOUT = 240
 RECORD_SECS = 8
+LIVE_SHOT_BEFORE_STOP = 1.0  # the live-words screenshot falls this long before the stop hotkey
 MATCH_MIN = 0.6
 
 sys.path.insert(0, HERE)
@@ -342,9 +343,19 @@ def dictation(tag, key, initial=""):
             return r
         shooter = Shooter(f"{tag}_1_rec")
         shooter.start()
-        time.sleep(RECORD_SECS)
+        t_rec = time.time()
+        time.sleep(max(0.0, RECORD_SECS - LIVE_SHOT_BEFORE_STOP))
+        # the live words, if any, are on the card by now (the spoken WAV is shorter than this):
+        # one named shot, paired with the text the app says the card is showing
+        seen = [e for e in ev.since(i0, "live") if (e.get("chars") or 0) > 0]
+        if seen:
+            r["live_shot"] = shot(f"{tag}_1_live_words")
+            r["live_shot_text"] = seen[-1].get("text")
+        time.sleep(max(0.0, RECORD_SECS - (time.time() - t_rec)))
+        t_press_stop = time.time()
         keys.press(key)
-        r["rec_stop"] = bool(ev.wait(("rec_stop",), 10, p, start=i0))
+        stop_ev = ev.wait(("rec_stop",), 10, p, start=i0)
+        r["rec_stop"] = bool(stop_ev)
         time.sleep(2)
         shooter.stop()
         proc = Shooter(f"{tag}_2_processing")
@@ -362,6 +373,17 @@ def dictation(tag, key, initial=""):
         r["card_events"] = len(ev.since(i0, "card"))
         r["card_shown"] = r["card_events"] > 0
         r["card_phases"] = sorted({str(e.get("phase")) for e in ev.since(i0, "card")})
+        # live words = text on the card WHILE recording: after rec_stop the card may show the
+        # final text, which comes from the batch transcript and proves nothing about the preview
+        t_stop = (stop_ev or {}).get("t") or t_press_stop
+        live_ev = ev.since(i0, "live")
+        before = [e for e in live_ev if (e.get("chars") or 0) > 0 and (e.get("t") or 0) <= t_stop]
+        r["live_events"] = len(live_ev)
+        r["live_words"] = bool(before)
+        r["live_first_text"] = before[0].get("text") if before else None
+        r["live_first_after_rec_s"] = (round(before[0]["t"] - rs["t"], 2)
+                                       if before and rs.get("t") else None)
+        r["live_last_text"] = before[-1].get("text") if before else None
         r["caret"] = ev.since(i0, "caret")[:3]
         r["context"] = ev.since(i0, "context")[:3]
         tr = ev.since(i0, "transcript")
@@ -522,6 +544,20 @@ def cmd_summary():
         checks[k] = every(k)
     checks["pasted_text_matches"]["word_ratio"] = {k: v.get("word_ratio") for k, v in sc.items()}
     checks["pasted_text_matches"]["min"] = MATCH_MIN
+    # live words on the card while recording: in at least one scenario. The model step of the
+    # workflow (model_fetch.py into the app's models folder) is reported next to it, so a red
+    # caused by a failed download is told apart from a red caused by the app.
+    try:
+        model = json.load(open(os.path.join(RES, "live_model.json"), encoding="utf-8"))
+    except Exception as e:
+        model = {"present": None, "error": f"no live_model.json: {e}"}
+    model["step_outcome"] = os.environ.get("LIVE_MODEL_OUTCOME") or None
+    lw = {k: bool(v.get("live_words")) for k, v in sc.items()}
+    checks["live_words"] = {"pass": any(lw.values()), "by_scenario": lw,
+                            "first_text": {k: v.get("live_first_text") for k, v in sc.items()},
+                            "model": model,
+                            "rule": "a live event with chars > 0 before rec_stop, in at least one scenario"}
+
     def first_run_ok(r):
         r = r or {}
         errors = [e for e in (r.get("events") or []) if e.get("ev") == "error"]
@@ -539,7 +575,9 @@ def cmd_summary():
         "tests_ok": all(t["ok"] for t in tests.values()),
         "tests": tests,
         "scenarios_brief": {k: {x: v.get(x) for x in ("ready_after_s", "frontmost_before", "textedit_text",
-                                                       "word_ratio", "error", "stop", "initial_text_kept")}
+                                                       "word_ratio", "error", "stop", "initial_text_kept",
+                                                       "live_first_text", "live_first_after_rec_s",
+                                                       "live_shot")}
                             for k, v in sc.items()},
         "driver_preflight": e2e.get("driver_preflight"),
         "e2e_error": e2e.get("error") or (e2e.get("exception") or "")[-1500:] or None,
@@ -548,6 +586,7 @@ def cmd_summary():
     dump("summary.json", summary)
     print(json.dumps({k: v["pass"] for k, v in checks.items()}, indent=1))
     print("tests:", {t: v["line"] for t, v in tests.items()})
+    print("live model:", {k: model.get(k) for k in ("present", "cache_hit", "secs", "step_outcome", "error")})
     print("all_ok:", summary["all_ok"])
 
 

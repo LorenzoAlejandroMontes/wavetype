@@ -23,9 +23,12 @@ WAV_BLOCK = 512          # frame per blocco della sorgente finta. Lo stream vero
 #                          blocksize=0 (lo sceglie il driver, CoreAudio di solito 512): un valore
 #                          fisso vicino a quello e' il massimo che si puo' imitare.
 CARD_EVERY = 0.5         # al massimo una riga "card" ogni tanti secondi per fase
+LIVE_EVERY = 0.5         # al massimo una riga "live" (parole sulla card) ogni tanti secondi
+LIVE_CLIP = 80           # caratteri di testo live nel file eventi
 
 _lock = threading.Lock()
 _card_last = {}
+_live_last = {"t": None, "text": None}
 
 
 def events_path():
@@ -58,6 +61,24 @@ def card(x, y, w, h, phase, now=None):
         return False
     _card_last[phase] = now
     emit("card", x=int(x), y=int(y), w=int(w), h=int(h), phase=phase)
+    return True
+
+
+def live(text, phase, now=None):
+    """Riga "live" con le parole che la card sta mostrando: solo se il testo e' cambiato
+    dall'ultima riga, e al massimo una ogni LIVE_EVERY secondi (la card disegna a 30 ms).
+    La CI la usa per dire che le parole live sono apparse durante la registrazione."""
+    if not events_path():
+        return False
+    text = text or ""
+    if text == _live_last["text"]:
+        return False
+    now = time.perf_counter() if now is None else now
+    last = _live_last["t"]
+    if last is not None and now - last < LIVE_EVERY:
+        return False
+    _live_last["t"], _live_last["text"] = now, text
+    emit("live", chars=len(text), text=clip(text, LIVE_CLIP), phase=phase)
     return True
 
 

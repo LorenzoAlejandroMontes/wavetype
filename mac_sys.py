@@ -10,6 +10,8 @@ Incolla (spec mac): appunti con il testo marcato org.nspasteboard.TransientType 
 appunti non lo salvano, come fa FreeFlow), 0,1 s di attesa, Cmd+V sintetico con CGEventPost.
 Gli appunti di prima tornano dopo ~1 s SOLO se nel frattempo nessuno li ha toccati
 (changeCount uguale) e contengono ancora il testo dettato.
+Prima dell'incolla l'app bersaglio deve risultare davanti (activate): se e' chiusa o non torna
+davanti, niente Cmd+V e il testo resta negli appunti, senza ripristino.
 """
 import ctypes
 import ctypes.util
@@ -200,49 +202,139 @@ def send_cmd(letter, default):
         time.sleep(0.005)
 
 
-def activate(pid):
-    """Riporta davanti l'app bersaglio se nel frattempo non lo e' piu'. True se e' davanti (o
-    se le si e' chiesto di tornarci), None se l'app non c'e' piu', False se non si sa."""
-    if not pid:
-        return False
+FRONT_WAIT = 0.30        # dopo la richiesta di attivazione: fino a tanto si aspetta che l'app sia davanti
+FRONT_POLL = 0.02
+# Se e' servito riportare davanti l'app, prima del Cmd+V si aspetta ancora questo (oltre a
+# PASTE_WAIT). Il pid risulta davanti appena macOS cambia app, ma credo che la finestra prenda
+# il focus solo a fine animazione (cambio di Space, app a tutto schermo: credo ~0,3 s). Con
+# PASTE_WAIT fa 0,35 s dopo la conferma: un tasto perso costa piu' di un'attesa, e capita solo
+# quando l'utente ha cambiato app durante la formattazione.
+ACTIVATED_WAIT = 0.25
+UNKNOWN = "unknown"      # activate(): non si sa chi e' davanti (pid 0, AppKit e AX muti)
+ACTIVATED = "activated"  # activate(): non era davanti, ce l'abbiamo riportata (e confermato)
+PASTE = {"why": ""}      # perche' l'ultimo insert_text non ha incollato (log, testhooks)
+
+
+def _ax_front_pid():
+    """pid dell'app con focus secondo AX (kAXFocusedApplicationAttribute dell'elemento di
+    sistema, timeout 0,1 s): domanda viva al server di accessibilita'. None se AX non risponde."""
     try:
-        from AppKit import NSWorkspace, NSRunningApplication
+        import ApplicationServices as AS
+        sysw = AS.AXUIElementCreateSystemWide()
+        try:
+            AS.AXUIElementSetMessagingTimeout(sysw, 0.1)
+        except Exception:
+            pass
+        err, app = AS.AXUIElementCopyAttributeValue(sysw, AS.kAXFocusedApplicationAttribute, None)
+        if err == AS.kAXErrorSuccess and app is not None:
+            err, p = AS.AXUIElementGetPid(app, None)
+            if err == AS.kAXErrorSuccess and p:
+                return int(p)
+    except Exception:
+        pass
+    return None
+
+
+def _ns_front_pid():
+    """pid di NSWorkspace.frontmostApplication, None se non risponde."""
+    try:
+        from AppKit import NSWorkspace
         front = NSWorkspace.sharedWorkspace().frontmostApplication()
-        if front is not None and int(front.processIdentifier()) == int(pid):
+        if front is not None:
+            return int(front.processIdentifier())
+    except Exception:
+        pass
+    return None
+
+
+def _front_pid():
+    """Chi e' davanti: decide AX quando risponde, NSWorkspace solo se AX tace; 0 = nessuno dei
+    due. NSWorkspace credo si aggiorni solo quando gira il run loop principale, e insert_text
+    gira proprio li' (tick di Tk): puo' essere fermo a un istante prima e dire ancora "Notes"
+    quando davanti c'e' gia' Slack. Con "basta una delle due" quel caso incollava in Slack."""
+    p = _ax_front_pid()
+    if p is None:
+        p = _ns_front_pid()
+    return p or 0
+
+
+def _running_app(pid):
+    from AppKit import NSRunningApplication
+    return NSRunningApplication.runningApplicationWithProcessIdentifier_(int(pid))
+
+
+def activate(pid):
+    """Riporta davanti l'app bersaglio se nel frattempo non lo e' piu', e RICONTROLLA che ci sia
+    arrivata (fino a FRONT_WAIT). True = era gia' davanti. ACTIVATED = non lo era, ce l'abbiamo
+    riportata e risulta davanti. False = chiesto ma non arrivata: da macOS 14 l'attivazione e'
+    "cooperativa" e IgnoringOtherApps e' deprecato, credo che un'app Accessory non riesca sempre
+    a portarne davanti un'altra. None = l'app non c'e' piu'. UNKNOWN = non si sa (pid 0, AppKit
+    e AX che non rispondono): si incolla come prima, nell'app davanti.
+    Il pid puo' essere il nostro (finestra del primo avvio davanti al tasto): vale lo stesso."""
+    if not pid:
+        return UNKNOWN
+    pid = int(pid)
+    try:
+        if _front_pid() == pid:
             return True
-        app = NSRunningApplication.runningApplicationWithProcessIdentifier_(int(pid))
+        app = _running_app(pid)
         if app is None:
             return None
         app.activateWithOptions_(1 << 1)        # NSApplicationActivateIgnoringOtherApps
-        time.sleep(0.05)
-        return True
     except Exception as e:
         log(f"   [mac] riattivazione app {pid}: {e}")
-        return False
+        return UNKNOWN
+    end = time.perf_counter() + FRONT_WAIT
+    seen = False
+    while True:
+        time.sleep(FRONT_POLL)
+        front = _front_pid()
+        if front == pid:
+            return ACTIVATED
+        seen = seen or bool(front)
+        if time.perf_counter() >= end:
+            return False if seen else UNKNOWN
 
 
 def insert_text(pid, text):
-    """Incolla `text` nell'app `pid` (spec mac). Non solleva."""
-    if activate(pid) is None:
-        # app bersaglio chiusa durante la formattazione: Cmd+V finirebbe nell'app davanti adesso.
-        # Il testo resta negli appunti (senza TransientType), da incollare a mano.
+    """Incolla `text` nell'app `pid` (spec mac). Non solleva. False = non incollato, il perche'
+    in PASTE["why"]."""
+    PASTE["why"] = ""
+    act = activate(pid)
+    if act is None or act is False:
+        # None: app bersaglio chiusa durante la formattazione. False: non e' tornata davanti
+        # (detti in Notes, durante la formattazione passi a Slack e macOS non concede il cambio).
+        # In tutti e due i casi Cmd+V finirebbe nell'app davanti adesso: niente Cmd+V, il testo
+        # resta negli appunti (senza TransientType e senza ripristino), da incollare a mano.
         try:
             set_clipboard_text(text)
         except Exception:
             pass
-        log(f"   [mac] app {pid} chiusa: niente incolla, testo lasciato negli appunti")
+        PASTE["why"] = (f"app {pid} chiusa" if act is None else
+                        f"app {pid} non e' tornata davanti entro {FRONT_WAIT:.1f} s")
+        log(f"   [mac] {PASTE['why']}: niente incolla, testo lasciato negli appunti")
         return False
-    saved = snapshot_clipboard()
+    # App riportata davanti da noi: il Cmd+V puo' perdersi durante il cambio (finestra non
+    # ancora col focus). Allora gli appunti di prima NON tornano e il testo resta negli appunti
+    # (senza TransientType, come negli altri ripieghi): se l'incolla si e' perso, Cmd+V a mano.
+    moved = act == ACTIVATED
+    saved = None if moved else snapshot_clipboard()
     try:
-        cc = set_clipboard_text(text, transient=True)
+        cc = set_clipboard_text(text, transient=not moved)
     except Exception as e:
-        log(f"   [mac] appunti non scritti: {e}")
+        PASTE["why"] = f"appunti non scritti: {e}"
+        log(f"   [mac] {PASTE['why']}")
         return False
+    if moved:
+        log(f"   [mac] app {pid} riportata davanti: attendo {ACTIVATED_WAIT:.2f} s in piu', "
+            "appunti di prima non ripristinati")
+        time.sleep(ACTIVATED_WAIT)
     time.sleep(PASTE_WAIT)
     try:
         send_cmd("v", KC_V_DEFAULT)
     except Exception as e:
-        log(f"   [mac] Cmd+V non inviato: {e}")
+        PASTE["why"] = f"Cmd+V non inviato: {e}"
+        log(f"   [mac] {PASTE['why']}")
         return False
     if saved:
         def restore():

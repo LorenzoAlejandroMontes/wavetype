@@ -6,7 +6,8 @@ cambiano: rettangoli in pixel (punti * backingScaleFactor), origine in alto a si
 schermo principale (vedi mac_geom.py). Il "bersaglio" (hwnd su Windows) qui e' il pid dell'app
 in primo piano.
 
-Catena del caret (budget ~150 ms, AXUIElementSetMessagingTimeout):
+Catena del caret (budget ~150 ms per TUTTA la catena: una scadenza, e a ogni chiamata
+AXUIElementSetMessagingTimeout = il tempo che resta):
   elemento con focus dell'app -> kAXSelectedTextRangeAttribute -> AXBoundsForRange
   (con un range lungo 0 molte app tornano un rettangolo vuoto: si allarga di un carattere).
   Se l'elemento non risponde: None, e la card va in basso al centro dello schermo attivo.
@@ -22,6 +23,8 @@ import mac_geom
 
 BUDGET_S = 0.150
 LOOKBACK = 120
+MIN_TIMEOUT_S = 0.005    # timeout AX minimo: 0 non si puo' dare (rimetterebbe quello di sistema, 6 s)
+FRONT_AX_S = 0.1         # frontmost_pid, ripiego AX: tetto del timeout (come mac_sys._ax_front_pid)
 
 _LOG = [print]
 _ax = {"mod": None, "tried": False, "err": None, "manual": set()}
@@ -53,10 +56,35 @@ def _AX():
     return _ax["mod"]
 
 
-def _attr(el, name):
-    """Valore di un attributo AX, o None (errore, attributo assente, app che non risponde)."""
+def _left(deadline):
+    """Secondi che restano prima della scadenza (None = nessuna scadenza)."""
+    return None if deadline is None else deadline - time.perf_counter()
+
+
+def _arm(el, deadline):
+    """Prima di ogni chiamata AX: False se la scadenza e' passata (la chiamata non si fa),
+    altrimenti il timeout dell'elemento diventa il tempo che resta. Come caret.py su Windows:
+    UNA scadenza per tutta la catena, non un timeout pieno per ogni gradino (prima ogni
+    chiamata aveva i suoi 0,15 s e la catena del caret poteva tenere fermo Tk ~0,9 s)."""
+    left = _left(deadline)
+    if left is None:
+        return True
+    if left <= 0:
+        return False
+    try:
+        _AX().AXUIElementSetMessagingTimeout(el, float(max(MIN_TIMEOUT_S, left)))
+    except Exception:
+        pass
+    return True
+
+
+def _attr(el, name, deadline=None):
+    """Valore di un attributo AX, o None (errore, attributo assente, app che non risponde,
+    scadenza passata)."""
     AS = _AX()
     if AS is None or el is None:
+        return None
+    if not _arm(el, deadline):
         return None
     try:
         err, val = AS.AXUIElementCopyAttributeValue(el, name, None)
@@ -103,8 +131,10 @@ def _rect_of(axval):
 
 
 # ------------------------------------------------------------------ app e schermi
-def frontmost_pid():
-    """pid dell'app in primo piano (il "bersaglio" della dettatura), 0 se non si sa."""
+def frontmost_pid(deadline=None):
+    """pid dell'app in primo piano (il "bersaglio" della dettatura), 0 se non si sa.
+    Il ripiego AX ha sempre un timeout corto: il tempo che resta fino a `deadline` (chi chiama
+    dentro una catena col suo budget) o al massimo FRONT_AX_S, mai quello di sistema (6 s)."""
     try:
         from AppKit import NSWorkspace
         app = NSWorkspace.sharedWorkspace().frontmostApplication()
@@ -114,8 +144,10 @@ def frontmost_pid():
         pass
     AS = _AX()
     try:
+        cap = time.perf_counter() + FRONT_AX_S
         sysw = AS.AXUIElementCreateSystemWide()
-        app = _attr(sysw, AS.kAXFocusedApplicationAttribute)
+        app = _attr(sysw, AS.kAXFocusedApplicationAttribute,
+                    cap if deadline is None else min(deadline, cap))
         if app is not None:
             err, pid = AS.AXUIElementGetPid(app, None)
             if err == AS.kAXErrorSuccess:
@@ -185,36 +217,30 @@ class dpi_scope:
 
 
 # ------------------------------------------------------------------ elemento con focus
-def _focused(pid, budget):
+def _focused(pid, deadline):
+    """Elemento con focus dell'app `pid`. `deadline` = perf_counter() oltre il quale non si
+    chiede piu' niente: ogni chiamata AX ha come timeout il tempo che resta (_arm)."""
     AS = _AX()
     if AS is None:
         return None
     try:
         root = AS.AXUIElementCreateApplication(int(pid)) if pid else AS.AXUIElementCreateSystemWide()
-        try:
-            AS.AXUIElementSetMessagingTimeout(root, float(max(0.05, budget)))
-        except Exception:
-            pass
-        if pid and pid not in _ax["manual"]:
+        if pid and pid not in _ax["manual"] and _arm(root, deadline):
             _ax["manual"].add(pid)
             try:                         # Chrome/Electron: accende l'albero AX (ignorato dagli altri)
                 AS.AXUIElementSetAttributeValue(root, "AXManualAccessibility", True)
             except Exception:
                 pass
-        el = _attr(root, AS.kAXFocusedUIElementAttribute)
-        if el is not None:
-            try:
-                AS.AXUIElementSetMessagingTimeout(el, float(max(0.05, budget)))
-            except Exception:
-                pass
-        return el
+        return _attr(root, AS.kAXFocusedUIElementAttribute, deadline)
     except Exception as e:
         log(f"   [ax] focus: {e}")
         return None
 
 
-def _bounds(el, loc, length):
+def _bounds(el, loc, length, deadline=None):
     AS = _AX()
+    if not _arm(el, deadline):
+        return None
     try:
         rng = AS.AXValueCreate(_vtype(AS, "CFRange"), (int(loc), int(length)))
         err, val = AS.AXUIElementCopyParameterizedAttributeValue(
@@ -234,21 +260,22 @@ def get_caret_rect(hwnd=None, budget=BUDGET_S):
 
 def get_caret_rect_verbose(hwnd=None, budget=BUDGET_S):
     t0 = time.perf_counter()
+    deadline = t0 + budget              # una scadenza per tutta la catena (gira nel loop di Tk)
     rect, src = None, None
     try:
-        pid = int(hwnd or 0) or frontmost_pid()
-        el = _focused(pid, budget)
+        pid = int(hwnd or 0) or frontmost_pid(deadline)
+        el = _focused(pid, deadline)
         AS = _AX()
         if el is not None and AS is not None:
-            sel = _attr(el, AS.kAXSelectedTextRangeAttribute)
+            sel = _attr(el, AS.kAXSelectedTextRangeAttribute, deadline)
             rg = _range_of(sel) if sel is not None else None
             if rg is not None:
                 loc, ln = rg
-                r, src = _bounds(el, loc, ln), "ax-bounds"
-                if (r is None or r[3] <= 0) and time.perf_counter() - t0 < budget:
-                    r, src = _bounds(el, loc, 1), "ax-bounds+1"     # caret degenere: un carattere
+                r, src = _bounds(el, loc, ln, deadline), "ax-bounds"
+                if r is None or r[3] <= 0:
+                    r, src = _bounds(el, loc, 1, deadline), "ax-bounds+1"   # caret degenere: un carattere
                     if (r is None or r[3] <= 0) and loc > 0:
-                        r, src = _bounds(el, loc - 1, 1), "ax-bounds-1"   # fine testo: quello prima
+                        r, src = _bounds(el, loc - 1, 1, deadline), "ax-bounds-1"   # fine testo: quello prima
                         if r is not None:
                             r = (r[0] + r[2], r[1], 1.0, r[3])
                 if r is not None and r[3] > 0:
@@ -286,18 +313,19 @@ def before_caret(hwnd=None, lookback=LOOKBACK, budget=1.5):
     AS = _AX()
     if AS is None:
         return None
+    deadline = time.perf_counter() + budget     # come il caret: una scadenza per tutte le chiamate
     try:
-        pid = int(hwnd or 0) or frontmost_pid()
-        if hwnd and frontmost_pid() not in (0, pid):
+        pid = int(hwnd or 0) or frontmost_pid(deadline)
+        if hwnd and frontmost_pid(deadline) not in (0, pid):
             return None                   # la finestra bersaglio non e' piu' davanti
-        el = _focused(pid, budget)
+        el = _focused(pid, deadline)
         if el is None:
             return None
-        val = _attr(el, AS.kAXValueAttribute)
+        val = _attr(el, AS.kAXValueAttribute, deadline)
         if not isinstance(val, str):      # NSString arriva come sottoclasse di str; un numero,
             return None                   # un booleano o niente: non e' un campo di testo
         s = str(val)
-        sel = _attr(el, AS.kAXSelectedTextRangeAttribute)
+        sel = _attr(el, AS.kAXSelectedTextRangeAttribute, deadline)
         rg = _range_of(sel) if sel is not None else None
         if rg is None:
             return None
@@ -314,9 +342,10 @@ def selected_text(hwnd=None, budget=0.3):
     AS = _AX()
     if AS is None:
         return None
+    deadline = time.perf_counter() + budget
     try:
-        el = _focused(int(hwnd or 0) or frontmost_pid(), budget)
-        if el is None:
+        el = _focused(int(hwnd or 0) or frontmost_pid(deadline), deadline)
+        if el is None or not _arm(el, deadline):
             return None
         err, val = AS.AXUIElementCopyAttributeValue(el, AS.kAXSelectedTextAttribute, None)
         if err != AS.kAXErrorSuccess or val is None:

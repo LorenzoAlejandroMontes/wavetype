@@ -6,14 +6,19 @@ Cosa prova:
   - mac_keys.Hybrid: tocco = toggle, tenuto >= 0,4 s = parla finche' tieni, reset (ESC & co.)
   - mac_keys.KeyState: modificatori solo da flagsChanged, VK di Windows -> tasti Mac,
     tasti 1-3 ingoiati in Edit, Ctrl+Option+Q/R/T ingoiati, istante vero del chord, Fn solo
-    dal tasto 63, chord usato con un altro tasto, riallineo dopo un tap spento
+    dal tasto 63, chord usato con un altro tasto, riallineo dopo un tap spento, sorgente del
+    chord (Fn o Ctrl+Option)
   - mac_sys: keycode V/C fuori dal thread principale solo dalla cache, appunti salvati solo
-    nei tipi noti, niente incolla se l'app bersaglio e' stata chiusa
+    nei tipi noti, niente incolla se l'app bersaglio e' stata chiusa o non torna davanti
+    (activate ricontrolla chi e' davanti, decide AX), appunti di prima non ripristinati se
+    l'app e' stata riportata davanti
+  - mac_ax: una scadenza per tutta la catena del caret e del testo prima del caret (AX finto)
   - mac_geom: pixel (origine in alto) <-> punti (origine in basso), Retina, schermi misti
   - testhooks: ricampionamento e blocchi del WAV finto, WavStream a tempo reale, eventi jsonl
   - paths e card_styles "come su darwin" (sys.platform finto, modulo ricaricato)
   - wavetype.worker_mac in un processo a parte con sys.platform = "darwin": il vero worker,
-    con lo stato dei tasti scritto a mano al posto del tap
+    con lo stato dei tasti scritto a mano al posto del tap (Fn subito, Ctrl+Option dopo la
+    grazia: Q/R/T o un altro tasto dentro la grazia non fanno partire niente)
 
 Uso:
   .venv/Scripts/python.exe tests/test_mac_layer.py
@@ -196,6 +201,26 @@ def test_altro_tasto_col_chord_lo_segna():
     eq(s.other, True, "Ctrl+Option+freccia")
 
 
+def test_sorgente_del_chord_fn_o_ctrl_option():
+    """Il worker fa partire Fn subito e Ctrl+Option dopo la grazia: deve sapere chi ha premuto."""
+    s = K.KeyState()
+    s.handle(K.T_FLAGS, 58, K.F_CTRL | K.F_OPT)
+    eq(s.src, "ctrl_option")
+    s.handle(K.T_FLAGS, K.KC_FN, K.F_CTRL | K.F_OPT | K.F_FN)    # Fn in piu': stessa pressione
+    eq(s.src, "ctrl_option", "il chord era gia' giu'")
+    s.handle(K.T_FLAGS, 58, 0)
+    s.handle(K.T_FLAGS, K.KC_FN, 0)
+    s.handle(K.T_FLAGS, K.KC_FN, K.F_FN)
+    eq(s.src, "fn")
+    s.handle(K.T_FLAGS, K.KC_FN, 0)
+    s.handle(K.T_FLAGS, 58, K.F_CTRL | K.F_OPT | K.F_FN)          # bit F_FN da una freccia giu'
+    eq(s.src, "ctrl_option", "Fn solo dal tasto 63: qui il bit F_FN non conta")
+    s.handle(K.T_FLAGS, 58, 0)
+    s.handle(K.T_FLAGS, K.KC_FN, K.F_FN | K.F_CTRL | K.F_OPT)     # tutti e due nello stesso evento
+    eq(s.src, "fn", "Fn vince: parte subito")
+    assert 0 < K.CTRL_OPT_GRACE_SEC < K.HOLD_SEC, "la grazia sta sotto la soglia del tenuto"
+
+
 def test_fn_solo_dal_tasto_63():
     """Il bit F_FN lo portano anche le frecce: Shift rilasciato con una freccia giu' non e' Fn."""
     s = K.KeyState()
@@ -291,6 +316,278 @@ def test_incolla_saltato_se_app_bersaglio_chiusa():
     finally:
         mac_sys.activate, mac_sys.send_cmd, mac_sys.set_clipboard_text, mac_sys.log = real
     eq((sent, clip), ([], [("ciao", False)]), "niente Cmd+V, testo negli appunti da tenere")
+
+
+def test_incolla_saltato_se_app_non_torna_davanti():
+    """Detti in Notes, durante la formattazione passi a Slack e macOS non riporta Notes davanti:
+    niente Cmd+V (finirebbe in Slack), testo negli appunti senza ripristino di quelli di prima."""
+    import mac_sys
+    sent, clip, snaps = [], [], []
+    real = (mac_sys.activate, mac_sys.send_cmd, mac_sys.set_clipboard_text, mac_sys.log,
+            mac_sys.snapshot_clipboard)
+    mac_sys.activate = lambda pid: False
+    mac_sys.send_cmd = lambda *a: sent.append(a)
+    mac_sys.set_clipboard_text = lambda text, transient=False: clip.append((text, transient)) or 1
+    mac_sys.log = lambda m: None
+    mac_sys.snapshot_clipboard = lambda: snaps.append(1) or [{"x": b"y"}]
+    try:
+        eq(mac_sys.insert_text(4242, "ciao"), False)
+    finally:
+        (mac_sys.activate, mac_sys.send_cmd, mac_sys.set_clipboard_text, mac_sys.log,
+         mac_sys.snapshot_clipboard) = real
+    eq((sent, clip, snaps), ([], [("ciao", False)], []), "niente Cmd+V, niente ripristino")
+    assert "davanti" in mac_sys.PASTE["why"], mac_sys.PASTE["why"]
+
+
+def test_activate_ricontrolla_chi_e_davanti():
+    import mac_sys
+
+    class App:
+        def __init__(self):
+            self.asked = 0
+
+        def activateWithOptions_(self, opt):
+            self.asked += 1
+
+    real = (mac_sys._front_pid, mac_sys._running_app, mac_sys.log, mac_sys.FRONT_WAIT,
+            mac_sys.FRONT_POLL)
+    mac_sys.log = lambda m: None
+    mac_sys.FRONT_WAIT, mac_sys.FRONT_POLL = 0.10, 0.01
+    try:
+        app = App()
+        mac_sys._running_app = lambda pid: app
+        mac_sys._front_pid = lambda: 7
+        eq((mac_sys.activate(7), app.asked), (True, 0), "gia' davanti: nessuna richiesta")
+        seq = iter([9, 9, 9] + [7] * 50)                        # Slack davanti, poi Notes
+        mac_sys._front_pid = lambda: next(seq)
+        eq((mac_sys.activate(7), app.asked), (mac_sys.ACTIVATED, 1),
+           "riportata davanti: lo si dice (ACTIVATED, non True)")
+        mac_sys._front_pid = lambda: 9
+        t0 = time.perf_counter()
+        eq(mac_sys.activate(7), False, "non torna davanti")
+        assert 0.09 <= time.perf_counter() - t0 < 0.5, time.perf_counter() - t0
+        mac_sys._running_app = lambda pid: None
+        eq(mac_sys.activate(7), None, "app chiusa")
+        eq(mac_sys.activate(0), mac_sys.UNKNOWN, "pid ignoto: si incolla come prima")
+        mac_sys._running_app = lambda pid: app
+        mac_sys._front_pid = lambda: 0
+        eq(mac_sys.activate(7), mac_sys.UNKNOWN, "nessuna fonte risponde: non si sa")
+    finally:
+        (mac_sys._front_pid, mac_sys._running_app, mac_sys.log, mac_sys.FRONT_WAIT,
+         mac_sys.FRONT_POLL) = real
+
+
+def test_chi_e_davanti_decide_ax():
+    """Review punto 4: NSWorkspace sul thread di Tk puo' essere fermo a un istante prima (dice
+    ancora Notes mentre davanti c'e' gia' Slack). Se AX risponde decide AX; NSWorkspace solo se
+    AX tace. Prima bastava una delle due per incollare."""
+    import mac_sys
+    real = (mac_sys._ax_front_pid, mac_sys._ns_front_pid, mac_sys._running_app, mac_sys.log,
+            mac_sys.FRONT_WAIT, mac_sys.FRONT_POLL)
+    mac_sys.log = lambda m: None
+    mac_sys.FRONT_WAIT, mac_sys.FRONT_POLL = 0.05, 0.01
+    try:
+        mac_sys._ax_front_pid, mac_sys._ns_front_pid = (lambda: 9), (lambda: 7)
+        eq(mac_sys._front_pid(), 9, "AX (Slack) vince su NSWorkspace fermo (Notes)")
+        mac_sys._running_app = lambda pid: type("A", (), {"activateWithOptions_": lambda s, o: 0})()
+        eq(mac_sys.activate(7), False, "Notes per NSWorkspace ma Slack per AX: niente incolla")
+        mac_sys._ax_front_pid = lambda: None
+        eq(mac_sys._front_pid(), 7, "AX muto: ripiego su NSWorkspace")
+        eq(mac_sys.activate(7), True)
+        mac_sys._ns_front_pid = lambda: None
+        eq(mac_sys._front_pid(), 0, "nessuno dei due")
+    finally:
+        (mac_sys._ax_front_pid, mac_sys._ns_front_pid, mac_sys._running_app, mac_sys.log,
+         mac_sys.FRONT_WAIT, mac_sys.FRONT_POLL) = real
+
+
+def _paste_with(act, wait):
+    """insert_text con activate finto -> (esito, Cmd+V, appunti scritti, snapshot, durata)."""
+    import mac_sys
+    sent, clip, snaps = [], [], []
+    real = (mac_sys.activate, mac_sys.send_cmd, mac_sys.set_clipboard_text, mac_sys.log,
+            mac_sys.snapshot_clipboard, mac_sys.PASTE_WAIT, mac_sys.ACTIVATED_WAIT,
+            mac_sys.RESTORE_AFTER, mac_sys._pb)
+    mac_sys.activate = lambda pid: act
+    mac_sys.send_cmd = lambda *a: sent.append(a)
+    mac_sys.set_clipboard_text = lambda text, transient=False: clip.append((text, transient)) or 1
+    mac_sys.log = lambda m: None
+    mac_sys.snapshot_clipboard = lambda: snaps.append(1) or [{"x": b"y"}]
+    mac_sys.PASTE_WAIT, mac_sys.ACTIVATED_WAIT = 0.0, wait
+    mac_sys.RESTORE_AFTER = 0.0
+
+    def no_pb():
+        raise RuntimeError("niente AppKit")              # il timer di ripristino resta innocuo
+    mac_sys._pb = no_pb
+    try:
+        t0 = time.perf_counter()
+        ok = mac_sys.insert_text(7, "ciao")
+        took = time.perf_counter() - t0
+        time.sleep(0.05)                                  # lascia scadere l'eventuale timer
+    finally:
+        (mac_sys.activate, mac_sys.send_cmd, mac_sys.set_clipboard_text, mac_sys.log,
+         mac_sys.snapshot_clipboard, mac_sys.PASTE_WAIT, mac_sys.ACTIVATED_WAIT,
+         mac_sys.RESTORE_AFTER, mac_sys._pb) = real
+    return ok, sent, clip, snaps, took
+
+
+def test_incolla_dopo_averla_riportata_davanti_senza_ripristino():
+    """Review punto 3: se e' servito riportare davanti l'app, il Cmd+V puo' perdersi durante il
+    cambio. Allora si aspetta ACTIVATED_WAIT in piu' e gli appunti di prima NON tornano: il
+    dettato resta da incollare a mano. Se era gia' davanti: come prima (snapshot e ripristino)."""
+    import mac_sys
+    ok, sent, clip, snaps, took = _paste_with(mac_sys.ACTIVATED, 0.08)
+    eq((ok, sent, clip, snaps), (True, [("v", mac_sys.KC_V_DEFAULT)], [("ciao", False)], []),
+       "riportata davanti: Cmd+V, testo non transient, nessuno snapshot da ripristinare")
+    assert took >= 0.08, f"attesa in piu' non fatta: {took:.3f} s"
+    ok, sent, clip, snaps, took = _paste_with(True, 0.08)
+    eq((ok, sent, clip, snaps), (True, [("v", mac_sys.KC_V_DEFAULT)], [("ciao", True)], [1]),
+       "gia' davanti: come prima")
+    assert took < 0.08, f"gia' davanti: nessuna attesa in piu' ({took:.3f} s)"
+    assert 0.1 <= mac_sys.ACTIVATED_WAIT + mac_sys.PASTE_WAIT <= 0.5, "attesa ragionevole"
+
+
+def test_incolla_se_non_si_sa_chi_e_davanti():
+    """pid 0 o AppKit muto: come prima, Cmd+V nell'app davanti (nessuna regressione)."""
+    import mac_sys
+    sent, clip = [], []
+    real = (mac_sys.activate, mac_sys.send_cmd, mac_sys.set_clipboard_text, mac_sys.log,
+            mac_sys.snapshot_clipboard, mac_sys.PASTE_WAIT)
+    mac_sys.activate = lambda pid: mac_sys.UNKNOWN
+    mac_sys.send_cmd = lambda *a: sent.append(a)
+    mac_sys.set_clipboard_text = lambda text, transient=False: clip.append((text, transient)) or 1
+    mac_sys.log = lambda m: None
+    mac_sys.snapshot_clipboard = lambda: None
+    mac_sys.PASTE_WAIT = 0.0
+    try:
+        eq(mac_sys.insert_text(0, "ciao"), True)
+    finally:
+        (mac_sys.activate, mac_sys.send_cmd, mac_sys.set_clipboard_text, mac_sys.log,
+         mac_sys.snapshot_clipboard, mac_sys.PASTE_WAIT) = real
+    eq((sent, clip), ([("v", mac_sys.KC_V_DEFAULT)], [("ciao", True)]), "Cmd+V inviato")
+
+
+# ------------------------------------------------------------------ mac_ax: budget della catena
+class _FakeEl:
+    def __init__(self):
+        self.timeout = 6.0                                # default di sistema
+
+
+class _FakeAS:
+    """ApplicationServices finto: ogni chiamata costa `cost` s. Se il timeout dell'elemento e'
+    piu' corto, aspetta solo quello e fallisce (kAXErrorCannotComplete), come AX vero."""
+    kAXErrorSuccess = 0
+    kAXFocusedUIElementAttribute = "AXFocusedUIElement"
+    kAXSelectedTextRangeAttribute = "AXSelectedTextRange"
+    kAXValueAttribute = "AXValue"
+    kAXSelectedTextAttribute = "AXSelectedText"
+    kAXFocusedApplicationAttribute = "AXFocusedApplication"
+    kAXBoundsForRangeParameterizedAttribute = "AXBoundsForRange"
+    kAXValueTypeCFRange = "range"
+    kAXValueTypeCGRect = "rect"
+
+    def __init__(self, cost):
+        self.cost, self.timeouts, self.n = cost, [], 0
+
+    def _wait(self, el):
+        self.n += 1
+        time.sleep(min(self.cost, el.timeout))
+        return self.cost <= el.timeout
+
+    def AXUIElementCreateApplication(self, pid):
+        return _FakeEl()
+
+    def AXUIElementCreateSystemWide(self):
+        return _FakeEl()
+
+    def AXUIElementSetMessagingTimeout(self, el, t):
+        el.timeout = t
+        self.timeouts.append(t)
+
+    def AXUIElementSetAttributeValue(self, el, name, v):
+        self._wait(el)
+        return 0
+
+    def AXUIElementCopyAttributeValue(self, el, name, _):
+        if not self._wait(el):
+            return -25204, None
+        val = {"AXFocusedUIElement": _FakeEl(), "AXSelectedTextRange": ("range", (5, 0)),
+               "AXValue": "hello world", "AXSelectedText": "world"}.get(name)
+        return (0, val) if val is not None else (-25205, None)
+
+    def AXValueCreate(self, kind, v):
+        return (kind, v)
+
+    def AXValueGetValue(self, v, kind, _):
+        return True, v[1]
+
+    def AXUIElementCopyParameterizedAttributeValue(self, el, attr, rng, _):
+        if not self._wait(el):
+            return -25204, None
+        h = 18.0 if tuple(rng[1]) == (4, 1) else 0.0      # solo il carattere prima ha un'altezza
+        return 0, ("rect", ((100.0, 50.0), (2.0, h)))
+
+
+def _with_fake_ax(cost, fn):
+    import mac_ax
+    saved = (dict(mac_ax._ax), set(mac_ax._ax["manual"]), mac_ax.screens, mac_ax.frontmost_pid,
+             mac_ax._LOG[0])
+    fake = _FakeAS(cost)
+    mac_ax._ax.update({"mod": fake, "tried": True, "manual": set()})
+    mac_ax.screens = lambda: [MAIN]
+    mac_ax.frontmost_pid = lambda deadline=None: 4242
+    mac_ax._LOG[0] = lambda m: None
+    try:
+        return fn(mac_ax), fake
+    finally:
+        mac_ax._ax.clear()
+        mac_ax._ax.update(saved[0])
+        mac_ax._ax["manual"] = saved[1]
+        mac_ax.screens, mac_ax.frontmost_pid, mac_ax._LOG[0] = saved[2:]
+
+
+def test_caret_ax_una_scadenza_per_tutta_la_catena():
+    """App lenta (0,1 s a chiamata, ognuna sotto il suo timeout): prima ogni chiamata aveva i
+    suoi 0,15 s e il loop di Tk restava fermo ~0,4 s; ora la catena intera sta nel budget."""
+    t0 = time.perf_counter()
+    (rect, src, _ms), fake = _with_fake_ax(0.10, lambda m: m.get_caret_rect_verbose(4242, 0.15))
+    took = time.perf_counter() - t0
+    eq((rect, src), (None, None), "budget sforato: card in basso al centro")
+    assert took < 0.15 + 0.06, f"catena durata {took:.3f} s"
+    assert fake.timeouts and all(0 < t <= 0.15 + 1e-9 for t in fake.timeouts), fake.timeouts
+    eq(fake.timeouts == sorted(fake.timeouts, reverse=True), True, "il tempo che resta, a scendere")
+
+
+def test_caret_ax_veloce_arriva_al_carattere_prima():
+    (rect, src, _ms), fake = _with_fake_ax(0.001, lambda m: m.get_caret_rect_verbose(4242, 0.15))
+    eq((rect, src), ((204, 100, 2, 36), "ax-bounds-1"), "Retina 2x: (102, 50, 1, 18) pt")
+    eq(fake.n, 6, "manual + focus + range + tre bounds")
+
+
+def test_testo_prima_del_caret_con_scadenza():
+    import mac_ax
+    t0 = time.perf_counter()
+    got, _fake = _with_fake_ax(0.20, lambda m: m.before_caret(4242, mac_ax.LOOKBACK, 0.30))
+    took = time.perf_counter() - t0
+    eq(got, None, "app lenta oltre il budget")
+    assert took < 0.30 + 0.06, f"before_caret durato {took:.3f} s"
+    got, _fake = _with_fake_ax(0.001, lambda m: m.before_caret(4242, mac_ax.LOOKBACK, 0.30))
+    eq(got, "hello", "i 5 caratteri prima del caret")
+
+
+def test_frontmost_pid_ripiego_ax_con_timeout_corto():
+    """Review punto 5: il ripiego AX di frontmost_pid (NSWorkspace muto) non usa il timeout di
+    sistema (6 s): al massimo FRONT_AX_S, o il tempo che resta della catena che lo chiama."""
+    import mac_ax
+    real_fp = mac_ax.frontmost_pid
+    t0 = time.perf_counter()
+    got, fake = _with_fake_ax(1.0, lambda m: real_fp())      # AX che non risponde per 1 s
+    took = time.perf_counter() - t0
+    eq(got, 0)
+    assert took < mac_ax.FRONT_AX_S + 0.06, f"ripiego AX durato {took:.3f} s"
+    assert fake.timeouts and max(fake.timeouts) <= mac_ax.FRONT_AX_S + 1e-9, fake.timeouts
+    got, fake = _with_fake_ax(1.0, lambda m: real_fp(time.perf_counter() - 1))   # budget finito
+    eq((got, fake.n), (0, 0), "scadenza gia' passata: nessuna chiamata AX")
 
 
 # ------------------------------------------------------------------ mac_geom
@@ -571,9 +868,21 @@ def fn(down, wait):
     S.handle(K.T_FLAGS, K.KC_FN, K.F_FN if down else 0)
     time.sleep(wait)
 
+def co(down, wait):
+    S.handle(K.T_FLAGS, 58, K.F_CTRL | K.F_OPT if down else 0)
+    time.sleep(wait)
+
+def names():
+    return [c for c in calls if isinstance(c, str)]
+
+def hotkeys():
+    return [c[2] for c in calls if not isinstance(c, str) and c[:2] == ("ev", "hotkey")]
+
 out = {}
-# 1) tocco breve: parte, resta in ascolto, il secondo tocco ferma
-fn(True, 0.10); fn(False, 0.30)
+# 1) tocco breve: Fn parte subito (niente grazia), resta in ascolto, il secondo tocco ferma
+fn(True, 0.10)
+out["fn_now"] = names()
+fn(False, 0.30)
 out["tap_rec"] = W.rec["held"]
 fn(True, 0.10); fn(False, 0.20)
 out["tap"] = [c for c in calls if isinstance(c, str)]
@@ -582,12 +891,14 @@ del calls[:]
 fn(True, 0.60); fn(False, 0.20)
 out["hold"] = [c for c in calls if isinstance(c, str)]
 del calls[:]
-# 3) Ctrl+Option poi R: parte, R = recupero (annulla la registrazione), rilasciare non riparte
+# 3) Ctrl+Option poi R dentro la grazia: recupero, nessuna dettatura (ne' bip ne' card), e
+#    rilasciare non riparte
 S.handle(K.T_FLAGS, 58, K.F_CTRL | K.F_OPT); time.sleep(0.10)
 S.handle(K.T_KEYDOWN, K.KC_R, K.F_CTRL | K.F_OPT); time.sleep(0.10)
 S.handle(K.T_KEYUP, K.KC_R, K.F_CTRL | K.F_OPT); time.sleep(0.10)
 S.handle(K.T_FLAGS, 58, 0); time.sleep(0.15)
-out["chord_r"] = [c for c in calls if isinstance(c, str)]
+out["chord_r"] = names()
+out["chord_r_ev"] = hotkeys()
 del calls[:]
 # 4) ESC mentre tieni Fn: annulla, rilasciare Fn non fa niente
 fn(True, 0.10)
@@ -613,9 +924,10 @@ out["fn_del_rec"] = W.rec["held"]
 fn(False, 0.15)
 out["fn_del"] = [c if isinstance(c, str) else c[2] for c in calls if c != ("ev", "hotkey", "start")]
 del calls[:]
-# 7) R di 30 ms mentre la registrazione si apre (0,3 s): recupero, niente ascolto rimasto aperto
+# 7) Ctrl+Option tenuto oltre la grazia, R di 30 ms mentre la registrazione si apre (0,3 s):
+#    recupero, niente ascolto rimasto aperto
 slow[0] = 0.3
-S.handle(K.T_FLAGS, 58, K.F_CTRL | K.F_OPT); time.sleep(0.05)
+S.handle(K.T_FLAGS, 58, K.F_CTRL | K.F_OPT); time.sleep(0.40)
 S.handle(K.T_KEYDOWN, K.KC_R, K.F_CTRL | K.F_OPT); time.sleep(0.03)
 S.handle(K.T_KEYUP, K.KC_R, K.F_CTRL | K.F_OPT); time.sleep(0.05)
 S.handle(K.T_FLAGS, 58, 0); time.sleep(0.6)
@@ -638,14 +950,41 @@ S.handle(K.T_FLAGS, 58, 0); time.sleep(0.15)
 out["same_tick_r_rec"] = W.rec["held"]
 out["same_tick_r"] = [c for c in calls if isinstance(c, str)]
 del calls[:]
-# 10) Ctrl+Option+Q di 30 ms mentre la registrazione si apre: esce (run #2 della CI: restava su)
+# 11) Ctrl+Option tenuto 0,5 s: niente dentro la grazia, parte a 0,3 s, al rilascio si ferma
+#     (tenuto misurato dalla pressione vera: 0,5 s >= 0,4)
+co(True, 0.15)
+out["co_hold_grace"] = names()
+co(True, 0.35)
+out["co_hold_mid"] = names()
+co(False, 0.20)
+out["co_hold"] = names()
+out["co_hold_ev"] = hotkeys()
+del calls[:]
+# 12) Ctrl+Option toccato 0,1 s: parte al rilascio e resta in ascolto, il secondo tocco ferma
+co(True, 0.10)
+out["co_tap_down"] = names()
+co(False, 0.15)
+out["co_tap_rec"] = W.rec["held"]
+co(True, 0.10); co(False, 0.20)
+out["co_tap"] = names()
+del calls[:]
+# 13) Ctrl+Option+freccia dentro la grazia: era un modificatore, non parte niente
+co(True, 0.05)
+S.handle(K.T_KEYDOWN, 123, K.F_CTRL | K.F_OPT); time.sleep(0.05)
+S.handle(K.T_KEYUP, 123, K.F_CTRL | K.F_OPT); time.sleep(0.40)
+co(False, 0.20)
+out["co_arrow"] = names()
+out["co_arrow_ev"] = hotkeys()
+del calls[:]
+# 10) Ctrl+Option+Q di 30 ms dentro la grazia: esce senza partire (run #2 della CI: restava su)
 slow[0] = 0.3
 S.handle(K.T_FLAGS, 58, K.F_CTRL | K.F_OPT); time.sleep(0.05)
 S.handle(K.T_KEYDOWN, K.KC_Q, K.F_CTRL | K.F_OPT); time.sleep(0.03)
 S.handle(K.T_KEYUP, K.KC_Q, K.F_CTRL | K.F_OPT); time.sleep(0.05)
 S.handle(K.T_FLAGS, 58, 0); time.sleep(0.6)
 out["quit"] = W.flags["quit"]
-out["quit_calls"] = [c for c in calls if isinstance(c, str)]
+out["quit_calls"] = names()
+out["quit_ev"] = hotkeys()
 th.join(1.0)
 out["alive"] = th.is_alive()
 print("PROBE " + json.dumps(out))
@@ -659,10 +998,12 @@ def test_worker_mac_vero_in_darwin():
     line = [ln for ln in r.stdout.splitlines() if ln.startswith("PROBE ")]
     assert line, f"probe senza esito (rc={r.returncode}): {r.stderr[-800:]}"
     out = json.loads(line[-1][6:])
+    eq(out["fn_now"], ["start"], "Fn parte alla pressione, senza grazia")
     eq(out["tap_rec"], True, "dopo il tocco breve resta in ascolto")
     eq(out["tap"], ["start", "stop"], "tocco, tocco")
     eq(out["hold"], ["start", "stop"], "tenuto")
-    eq(out["chord_r"], ["start", "recover", "stop"], "Ctrl+Option+R")
+    eq(out["chord_r"], ["recover"], "Ctrl+Option+R dentro la grazia: recupero senza dettatura")
+    eq(out["chord_r_ev"], [], "Ctrl+Option+R dentro la grazia: nessun evento hotkey start")
     eq(out["esc_rec"], False, "ESC ferma")
     eq(out["esc"], ["start", "cancel"], "ESC poi rilascio di Fn: nessuno stop in piu'")
     eq(out["slow_rec"], True, "tocco breve con avvio lento: resta in ascolto")
@@ -670,15 +1011,24 @@ def test_worker_mac_vero_in_darwin():
     eq(out["fn_del_rec"], False, "Fn+Canc annulla")
     eq(out["fn_del"], ["start", "cancel"], "Fn+Canc poi rilascio di Fn: nessuno stop in piu'")
     eq(out["fast_r_rec"], False, "R breve durante l'avvio: niente ascolto rimasto aperto")
-    eq(out["fast_r"], ["start", "recover", "stop"], "R breve durante l'avvio: recupero")
+    # runner lento: se il worker guarda la grazia solo dopo la R, la R arriva prima e non parte
+    # niente. Entrambi giusti; mai un ascolto rimasto aperto.
+    eq(out["fast_r"] in (["start", "recover", "stop"], ["recover"]), True,
+       f"R breve durante l'avvio: {out['fast_r']}")
     eq(out["fast_esc_rec"], False, "ESC breve durante l'avvio annulla")
     eq(out["same_tick_r_rec"], False, "Ctrl+Option+R nello stesso giro: niente dettatura")
-    eq(out["same_tick_r"] in (["recover"], ["start", "recover", "stop"]), True,
-       f"Ctrl+Option+R nello stesso giro: {out['same_tick_r']}")
-    # runner lento: la Q puo' arrivare prima che il worker veda Ctrl+Option, e l'app esce senza
-    # avviare (run #4 della CI). Entrambi giusti; mai due avvii o uno stop.
-    eq(out["quit_calls"] in ([], ["start"]), True, f"Ctrl+Option+Q: {out['quit_calls']}")
-    eq((out["quit"], out["alive"]), (True, False), "Ctrl+Option+Q breve durante l'avvio esce")
+    eq(out["same_tick_r"], ["recover"], "Ctrl+Option+R nello stesso giro")
+    eq(out["co_hold_grace"], [], "Ctrl+Option tenuto: niente prima della grazia")
+    eq(out["co_hold_mid"], ["start"], "Ctrl+Option tenuto: parte a 0,3 s")
+    eq(out["co_hold"], ["start", "stop"], "Ctrl+Option tenuto 0,5 s: al rilascio si ferma")
+    eq(out["co_hold_ev"], ["start", "stop"], "Ctrl+Option tenuto: eventi hotkey")
+    eq(out["co_tap_down"], [], "Ctrl+Option toccato: niente mentre e' giu'")
+    eq(out["co_tap_rec"], True, "Ctrl+Option toccato: parte al rilascio e resta in ascolto")
+    eq(out["co_tap"], ["start", "stop"], "Ctrl+Option tocco, tocco")
+    eq((out["co_arrow"], out["co_arrow_ev"]), ([], []), "Ctrl+Option+freccia: non parte niente")
+    eq(out["quit_calls"], [], "Ctrl+Option+Q dentro la grazia: nessuna dettatura")
+    eq(out["quit_ev"], [], "Ctrl+Option+Q dentro la grazia: nessun evento hotkey start")
+    eq((out["quit"], out["alive"]), (True, False), "Ctrl+Option+Q breve esce")
 
 
 def main():
