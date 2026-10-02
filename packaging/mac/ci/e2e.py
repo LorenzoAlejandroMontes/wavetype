@@ -85,8 +85,13 @@ def shot(name):
     rc, msg = run(["screencapture", "-x", tmp], 20)
     if rc != 0 or not os.path.exists(tmp):
         say(f"screencapture {name} failed: {msg.strip()}")
+        with open(os.path.join(RES, "shot_errors.txt"), "a", encoding="utf-8") as f:   # run 1: 0 shots, no trace
+            f.write(f"{name} rc={rc} {msg.strip()[:300]}\n")
         return None
-    run(["sips", "-Z", "1600", "-s", "format", "jpeg", "-s", "formatOptions", "80", tmp, "--out", out], 30)
+    rc2, msg2 = run(["sips", "-Z", "1600", "-s", "format", "jpeg", "-s", "formatOptions", "80", tmp, "--out", out], 30)
+    if not os.path.exists(out):
+        with open(os.path.join(RES, "shot_errors.txt"), "a", encoding="utf-8") as f:
+            f.write(f"{name} sips rc={rc2} {msg2.strip()[:300]}\n")
     try:
         os.remove(tmp)
     except OSError:
@@ -488,7 +493,7 @@ def _test_result(t):
         rc = int(open(os.path.join(RES, "tests", f"{t}.exit")).read().strip())
     except Exception:
         return {"ok": False, "line": "not run", "exit": None}
-    hits = re.findall(r"(\d+)\s*/\s*(\d+)\s+ok", text)
+    hits = re.findall(r"(\d+)\s*/\s*(\d+)\s+(?:ok|passati)", text)   # live_engine/dual say "passati"
     if not hits:
         return {"ok": False, "line": text.strip().splitlines()[-1][:200] if text.strip() else "", "exit": rc}
     a, b = hits[-1]

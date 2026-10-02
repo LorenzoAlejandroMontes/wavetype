@@ -17,7 +17,8 @@ pyobjc-framework-AVFoundation; sys_platform == "darwin"
 
 # Optional: FLAC encoding before upload (smaller, faster uploads).
 # Without it, audio is sent as WAV.
-av
+# <19: PyAV 19 dropped open(metadata_errors=...), which faster-whisper 1.2.1 passes (decode_audio)
+av<19
 
 # Live words next to the caret (Nemotron streaming on the CPU). The model itself (~475 MB) is
 # downloaded by the app on first run into models/ (model_fetch.py).
