@@ -15,8 +15,13 @@ Catena di ripiego (misurata il 2026-09-20, sonde in tests/bench/context/):
      ValuePattern; la posizione del cursore arriva da EM_GETSEL, che risponde anche
      da un altro processo.
   3. None: non si sa -> chi chiama si comporta come prima (maiuscola).
+
+Su macOS: mac_ax.before_caret (kAXValueAttribute + kAXSelectedTextRangeAttribute, si legge
+solo il pezzo prima del cursore), stesso contratto. La regola qui sotto (starts_sentence, fit)
+e' la stessa per tutti.
 """
 import ctypes
+import sys
 import time
 
 try:
@@ -225,3 +230,16 @@ def fit(prev, text, keep=()):
     if prev and prev[-1] not in NO_SPACE_AFTER:
         head = " " + head
     return head
+
+
+# ------------------------------------------------------------------ macOS
+if sys.platform == "darwin":
+    import mac_ax
+
+    def before_caret(hwnd=None, budget=BUDGET_S):  # noqa: F811
+        """Testo che precede il cursore, o None se non si sa (AX, vedi mac_ax.py)."""
+        return mac_ax.before_caret(hwnd, LOOKBACK, budget)
+
+    def set_log(fn):  # noqa: F811
+        _LOG[0] = fn
+        mac_ax.set_log(fn)

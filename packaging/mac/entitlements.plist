@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for Wavetype.app, applied with the hardened runtime (required for notarization).
+  The app is not sandboxed (it pastes into other apps and reads their caret through
+  Accessibility), so only hardened-runtime exceptions are listed here.
+-->
+<plist version="1.0">
+<dict>
+	<!-- Microphone. Under the hardened runtime, audio input is blocked unless this is present,
+	     even after the user grants Microphone in System Settings. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+
+	<!-- Python's ctypes/libffi builds call trampolines in writable+executable memory. Without
+	     this, ctypes callbacks (used by sounddevice/PortAudio and PyObjC) fail with MemoryError
+	     under the hardened runtime (pyinstaller#4629). -->
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+
+	<!-- PyInstaller bundles third-party dylibs (onnxruntime, ctranslate2, sherpa-onnx, PortAudio,
+	     the Python runtime). In the ad-hoc CI build they carry no Team ID, so library validation
+	     would refuse to load them; in the Developer ID build they are re-signed by us, but this keeps
+	     a wheel that ships a pre-signed dylib from breaking the app at launch. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

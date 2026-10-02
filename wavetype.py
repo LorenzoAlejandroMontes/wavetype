@@ -12,6 +12,11 @@ small card next to the caret shows the words as they are recognised.
 Architecture: tkinter UI on the main thread (always-on-top card that never steals focus);
 a worker thread polls the keys, records, transcribes and pastes, so the UI never blocks.
 
+macOS: same app, same flow. The hotkey is Fn (or Ctrl+Option): tap it to toggle, hold it to
+talk while held. Keys come from a CGEventTap (mac_keys.py), the card is an NSPanel
+(mac_panel.py), caret and context come from Accessibility (mac_ax.py), paste and the rest of
+the system from mac_sys.py. Everything Windows-only below is guarded by IS_WIN / IS_MAC.
+
 Code comments are in Italian - the author's language. Issues and PRs in English are welcome.
 """
 import os
@@ -21,14 +26,12 @@ import time
 import shutil
 import threading
 import wave
-import winsound
 import json
 import urllib.request
 import httpx
 import tkinter as tk
 from PIL import Image, ImageTk, ImageDraw, ImageFont, ImageFilter
 import ctypes
-from ctypes import wintypes
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -37,15 +40,29 @@ except Exception:
 
 import numpy as np
 import sounddevice as sd
-import win32gui
-import win32con
-import win32api
-import win32clipboard
-import win32event
-import winerror
-import keyboard
+
+IS_WIN = sys.platform == "win32"
+IS_MAC = sys.platform == "darwin"
+if IS_WIN:                            # su macOS gli stessi lavori li fanno i moduli mac_*.py
+    import winsound
+    from ctypes import wintypes
+    import win32gui
+    import win32con
+    import win32api
+    import win32clipboard
+    import win32event
+    import winerror
+    import keyboard
+else:
+    winsound = wintypes = win32gui = win32con = win32api = None
+    win32clipboard = win32event = winerror = keyboard = None
+if IS_MAC:
+    import mac_ax                     # app in primo piano (il "bersaglio")
+    import mac_keys                   # tap dei tasti: Fn / Ctrl+Option, ESC, 1-3
+    import mac_sys                    # appunti, incolla, bip, istanza unica, permessi
 import math
 import paths                          # dove stanno i file: accanto al sorgente, o %APPDATA% da eseguibile
+import testhooks                      # WAVETYPE_TEST_WAV / WAVETYPE_TEST_EVENTS (CI): senza, nessun effetto
 # Motore dell'anteprima live. "local" = live_local.py (Nemotron in streaming sulla CPU: parola a
 # video in 0,40 s di mediana, nessuna richiesta di rete); "groq" = live_engine.py (pezzi rimandati
 # a Groq, bocciato alla prova del 19/09). Per tornare a Groq basta cambiare questa riga.
@@ -256,6 +273,9 @@ def log(msg):
 
 
 def beep(freq, ms=90):
+    if IS_MAC:                        # tono generato, in coda su un thread: non blocca (mac_sys)
+        mac_sys.beep(freq, ms)
+        return
     try:
         winsound.Beep(freq, ms)
     except Exception:
@@ -283,7 +303,10 @@ def set_mic_max():
     dentro. Prima c'era cast(iface, POINTER(...)): due puntatori allo stesso oggetto con un solo
     riferimento, quindi un Release di troppo; il garbage collector lo faceva poi sul thread
     principale e l'eseguibile moriva con access violation (visto 2 avvii su 3 a cache COM vuota,
-    crash.log del 23/09: Release in __del__ durante il GC)."""
+    crash.log del 23/09: Release in __del__ durante il GC).
+    Su macOS niente: il livello d'ingresso lo lascia com'e' (nessuna API semplice e pubblica)."""
+    if not IS_WIN:
+        return
     import gc
     try:
         import comtypes
@@ -326,6 +349,35 @@ def swallow_win():
     # colpetto di F13 (tasto neutro) mentre Win e' premuto: impedisce l'apertura del menu Start
     win32api.keybd_event(VK_F13, 0, 0, 0)
     win32api.keybd_event(VK_F13, 0, win32con.KEYEVENTF_KEYUP, 0)
+
+
+if IS_MAC:
+    # Stesse domande, risposte dal tap (mac_keys): le funzioni condivise che chiamano _down() con
+    # i VK di Windows (ESC, Q/R/T, Ctrl, Alt=Option, Win=Command) restano come sono.
+    def _down(vk):  # noqa: F811
+        return mac_keys.vk_down(vk)
+
+    def chord_down():  # noqa: F811
+        """Fn (Globe) o Ctrl+Option."""
+        return mac_keys.chord_down()
+
+    def swallow_win():  # noqa: F811
+        pass                          # niente menu Start da evitare
+
+
+def fg_window():
+    """Il bersaglio della dettatura: la finestra in primo piano (Windows), il pid dell'app
+    davanti (macOS)."""
+    if IS_MAC:
+        return mac_ax.frontmost_pid()
+    return win32gui.GetForegroundWindow()
+
+
+def window_title(h):
+    """Per il log: titolo della finestra (Windows) o nome dell'app (macOS)."""
+    if IS_MAC:
+        return mac_ax.app_name(h)
+    return win32gui.GetWindowText(h)
 
 
 # ---------- anteprima live ----------
@@ -625,6 +677,8 @@ def _chip_key(key):
 
 def edit_keys_set(on):
     """Aggancia (on) o sgancia gli hook dei tasti 1, 2, 3. Non solleva mai."""
+    if IS_MAC:
+        return _edit_keys_set_mac(on)
     if on and not edit_keys["hooks"] and edit_chips is not None:
         try:
             for c in edit_chips.CHIPS:
@@ -642,9 +696,27 @@ def edit_keys_set(on):
                 pass
 
 
+def _edit_keys_set_mac(on):
+    """macOS: i tasti 1-3 (riga dei numeri e tastierino) li ingoia il tap di mac_keys."""
+    try:
+        if on and not edit_keys["hooks"] and edit_chips is not None:
+            m = {}
+            for c in edit_chips.CHIPS:
+                for kc in mac_keys.DIGIT_KEYS.get(c.key, ()):
+                    m[kc] = lambda _kc, k=c.key: _chip_key(k)
+            mac_keys.set_swallow(m)
+            edit_keys["hooks"] = sorted(m)
+        if not on:
+            edit_keys["hooks"] = []
+            mac_keys.set_swallow({})
+    except Exception as e:
+        log(f"   [edit] tasti 1-3 non disponibili: {e}")
+
+
 def live_panel_off(e):
     """Il pannello ha sollevato: si logga una volta e la dettatura continua senza pannello."""
     log(f"   [live] pannello disattivato per questa dettatura: {e}")
+    testhooks.emit("error", where="panel", msg=str(e))
     p, live["panel"] = live["panel"], None
     live["open"] = live["ending"] = False
     live["close_at"] = 0.0
@@ -1267,6 +1339,8 @@ def groq_transcribe_long(a, sr, force_lang=None, chunk_sec=CHUNK_SEC):
 
 
 def get_clipboard_text():
+    if IS_MAC:
+        return mac_sys.get_clipboard_text()
     try:
         win32clipboard.OpenClipboard()
         try:
@@ -1280,6 +1354,9 @@ def get_clipboard_text():
 
 
 def set_clipboard_text(text):
+    if IS_MAC:
+        mac_sys.set_clipboard_text(text)
+        return
     win32clipboard.OpenClipboard()
     win32clipboard.EmptyClipboard()
     win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, text)
@@ -1287,6 +1364,12 @@ def set_clipboard_text(text):
 
 
 def insert_text(hwnd, text):
+    if IS_MAC:                        # NSPasteboard + Cmd+V, appunti di prima ripristinati (mac_sys)
+        if mac_sys.insert_text(hwnd, text):
+            testhooks.emit("pasted", chars=len(text), text=text[:200])
+        else:
+            testhooks.emit("error", where="paste", msg="incolla non riuscito")
+        return
     saved = get_clipboard_text()
     try:
         win32gui.SetForegroundWindow(hwnd)
@@ -1302,6 +1385,7 @@ def insert_text(hwnd, text):
             set_clipboard_text(saved)
         except Exception:
             pass
+    testhooks.emit("pasted", chars=len(text), text=text[:200])
 
 
 def read_context(hwnd, token):
@@ -1313,9 +1397,19 @@ def read_context(hwnd, token):
         return
     if rec["t0"] != token:             # nel frattempo e' partita un'altra dettatura: non e' mia
         return
+    testhooks.emit("context", before=testhooks.clip(prev, 40))
     rec["ctx"] = prev
     if prev is not None and not ctx_mod.starts_sentence(prev):
         log(f"   [ctx] cursore a meta' frase, dopo: '{prev[-30:]}'")
+
+
+def open_input_stream():
+    """Lo stream del microfono. Con WAVETYPE_TEST_WAV un WAV letto a tempo reale al suo posto
+    (testhooks.WavStream: stessa start/stop/close, stesso audio_cb)."""
+    wav = os.environ.get(testhooks.ENV_WAV)
+    if wav:
+        return testhooks.WavStream(wav, REC_SR, audio_cb)
+    return sd.InputStream(samplerate=REC_SR, channels=1, dtype="float32", callback=audio_cb)
 
 
 def start_rec(edit=False, sel=""):
@@ -1328,25 +1422,29 @@ def start_rec(edit=False, sel=""):
     rec["remind"] = 1                  # promemoria sonoro: il prossimo scatta a REC_REMIND_SEC
     rec["chip"] = None                 # Edit: comando scelto col tasto 1-3 (None = lo dici)
     if not edit:                       # in edit mode l'hwnd e la selezione li ha gia' presi start_edit
-        rec["hwnd"] = win32gui.GetForegroundWindow()
+        rec["hwnd"] = fg_window()
     ui["state"] = "rec"
     # prima dello stream: il motore vede l'audio dal primo blocco. In Edit la card a tre comandi
     # porta il numero di parole della selezione e scrive l'istruzione mentre la dici.
     live_start(rec["hwnd"], len(sel.split()) if edit else None)
     if not live["open"]:               # l'HUD torna (anche se nascosto con ESC) solo quando e' lui
         flags["dismiss"] = False       # l'indicatore: con la card a schermo resta dov'era
-    rec["stream"] = sd.InputStream(samplerate=REC_SR, channels=1, dtype="float32", callback=audio_cb)
+    rec["stream"] = open_input_stream()
     rec["stream"].start()
+    testhooks.emit("rec_start")
     rec["ctx"] = None
     if CONTEXT_ON and ctx_mod is not None and not edit:
         threading.Thread(target=read_context, args=(rec["hwnd"], rec["t0"]), daemon=True).start()
     tag = "EDIT" if edit else "REC"
-    log(f"\n=== {tag} — target: '{win32gui.GetWindowText(rec['hwnd'])}' | "
+    log(f"\n=== {tag} — target: '{window_title(rec['hwnd'])}' | "
         f"mic: '{input_device_name()}' ===")
 
 
 def copy_selection():
-    """Copia il testo selezionato (Ctrl+C) e lo restituisce, ripristinando la clipboard."""
+    """Copia il testo selezionato (Ctrl+C) e lo restituisce, ripristinando la clipboard.
+    macOS: prima AX (niente tasti), poi Cmd+C (mac_sys.copy_selection)."""
+    if IS_MAC:
+        return mac_sys.copy_selection(rec["hwnd"] or None)
     saved = get_clipboard_text()
     try:
         set_clipboard_text("")
@@ -1392,7 +1490,7 @@ def start_capture():
     """Win+Ctrl: se c'è testo selezionato -> Edit Mode (trasforma la selezione); altrimenti dettatura.
     Ritorna la lettera se nel frattempo e' arrivata Q/R/T (il comando lo esegue il worker) e in
     quel caso non registra nulla: prima la dettatura partiva, apriva la card e andava annullata."""
-    hwnd = win32gui.GetForegroundWindow()
+    hwnd = fg_window()
     k = _wait_modifiers_up(watch=CHORD_KEYS)
     if k:
         return k
@@ -1414,6 +1512,7 @@ def stop_and_process():
         rec["stream"].close()
     except Exception:
         pass
+    testhooks.emit("rec_stop", secs=round(time.perf_counter() - rec["t0"], 3))
     ui["state"] = "proc"
     live_phase("rewriting" if rec["edit"] else "formatting")   # dallo stop all'incolla
     threading.Thread(target=_process, args=(rec["frames"], rec["hwnd"], rec["edit"], rec["sel"],
@@ -1484,15 +1583,18 @@ def stt(wav_path, a16, t0):
                 else:
                     log(f"   [deragliata] il secondo tentativo non e' meglio ({n2}): tengo il primo")
             log(f"   [groq/{lang}] {time.perf_counter()-t0:.2f}s | '{text}'")
+            testhooks.emit("transcript", engine="groq", chars=len(text))
         except Exception as e:
             groq_err = True
             log(f"   [groq stt] fallback locale: {e}")
+            testhooks.emit("error", where="groq_stt", msg=str(e)[:200])
     if not text and model is not None:
         segs, info = model.transcribe(wav_path, language=LANG, vad_filter=True, beam_size=BEAM,
                                       without_timestamps=True, condition_on_previous_text=False)
         text = " ".join(s.text for s in segs).strip()
         lang = info.language
         log(f"   [{MODEL}/{lang}] {time.perf_counter()-t0:.2f}s | '{text}'")
+        testhooks.emit("transcript", engine="local", chars=len(text))
     elif not text:
         log("   [stt] nessuna trascrizione: Groq ko e motore locale non disponibile. "
             f"L'audio resta in {REC_DIR}: Win+Ctrl+R per riprovare.")
@@ -1674,7 +1776,7 @@ def reprocess_last(hwnd, path=None):
         a16, sr = read_wav(path)
         dur = len(a16) / max(sr, 1)
         log(f"\n=== RECUPERO {os.path.basename(path)} ({dur:.1f}s) — "
-            f"target: '{win32gui.GetWindowText(hwnd)}' ===")
+            f"target: '{window_title(hwnd)}' ===")
         live_recover_start(hwnd, dur)
         box = []                       # il contesto si legge mentre la trascrizione lavora
         if CONTEXT_ON and ctx_mod is not None:
@@ -1718,7 +1820,7 @@ def abort_chord_rec():
 
 def chord_recover():
     """Win+Ctrl+R: rielabora l'ultima registrazione nella finestra attiva."""
-    hw = rec["hwnd"] if rec["held"] else win32gui.GetForegroundWindow()
+    hw = rec["hwnd"] if rec["held"] else fg_window()
     target = last_recording()   # deciso PRIMA di archiviare, se no si recupera se' stessa
     abort_chord_rec()
     threading.Thread(target=reprocess_last, args=(hw, target), daemon=True).start()
@@ -1803,6 +1905,109 @@ def worker():
             else:
                 stop_and_process()
         prev = now
+        time.sleep(0.02)
+
+
+def start_capture_mac():
+    """macOS (Fn o Ctrl+Option): come start_capture, ma senza aspettare che i modificatori si
+    alzino. Nel modo "tieni premuto" il tasto resta giu' per tutta la dettatura: aspettarlo
+    costerebbe 0,7 s di parlato a ogni avvio. Cmd+C (se serve) porta i suoi flag, quindi i
+    modificatori tenuti non lo sporcano. Ctrl+Option+Q/R/T li guarda il worker anche dopo la
+    partenza: annullano la registrazione appena aperta (abort_chord_rec), come su Windows."""
+    pid = fg_window()
+    rec["hwnd"] = pid                  # copy_selection (AX) chiede la selezione a questa app
+    sel = copy_selection()
+    if sel:
+        log(f"   [edit] selezione ({len(sel)} char) — di' l'istruzione")
+        start_rec(edit=True, sel=sel)
+    else:
+        start_rec(edit=False)
+
+
+def worker_mac():
+    """macOS: stesso polling del worker di Windows, sul dizionario del tap (mac_keys).
+    Fn e Ctrl+Option sono ibridi (mac_keys.Hybrid): tocco = toggle come Win+Ctrl, tenuto
+    premuto oltre HOLD_SEC = parli finche' tieni. ESC, tasti 1-3, promemoria: come su Windows."""
+    hy = mac_keys.Hybrid(mac_keys.HOLD_SEC)
+    esc_prev = r_prev = t_prev = False
+    while not flags["quit"]:
+        co = mac_keys.STATE.ctrl_option()
+        if co and _down(VK_Q):          # Ctrl+Option+Q -> esci del tutto
+            flags["quit"] = True
+            break
+        r = co and _down(VK_R)          # Ctrl+Option+R -> rielabora l'ultima registrazione
+        t = co and _down(VK_T)          # Ctrl+Option+T -> stile della card
+        if (r and not r_prev) or (t and not t_prev):
+            if r and not r_prev:
+                chord_recover()
+            else:
+                chord_style()
+            hy.reset()                  # il rilascio di questi tasti non e' un toggle
+            r_prev, t_prev = r, t
+            time.sleep(0.02)
+            continue
+        r_prev, t_prev = r, t
+        if hy.state == "pressed" and mac_keys.STATE.other:
+            # Fn+Canc, Fn+frecce, Ctrl+Option+frecce: il chord era un modificatore, non una
+            # dettatura. Come per R/T: la registrazione appena aperta si annulla.
+            testhooks.emit("hotkey", what="cancel")
+            log("   [tasti] chord usato con un altro tasto: dettatura annullata")
+            abort_chord_rec()
+            hy.reset()
+        if hy.active() and not rec["held"]:
+            hy.reset()                  # finita altrove (ESC, tasto 1-3, silenzio): si riparte da capo
+        edit_on = rec["held"] and rec["edit"]
+        if edit_on != bool(edit_keys["hooks"]):     # tasti 1-3 solo mentre registri un Edit
+            edit_keys_set(edit_on)
+        if edit_on and rec["chip"]:     # tasto 1-3 premuto: stop, il comando e' deciso
+            stop_and_process()
+            edit_keys_set(False)
+            hy.reset()
+            time.sleep(0.02)
+            continue
+        if rec["held"] and time.perf_counter() - rec["t0"] > rec["remind"] * REC_REMIND_SEC:
+            mins = rec["remind"] * REC_REMIND_SEC // 60     # promemoria: microfono ancora aperto
+            rec["remind"] += 1
+            log(f"   [rec] registrazione ancora attiva da {mins} min")
+            threading.Thread(target=lambda: (beep(880, 70), beep(660, 70)), daemon=True).start()
+        esc = _down(0x1B)               # ESC -> annulla la dettatura in corso (qualunque fase)
+        if esc and not esc_prev:
+            st = ui["state"]
+            if st in ("rec", "proc"):
+                testhooks.emit("hotkey", what="cancel")
+            if st == "rec":
+                rec["held"] = False
+                flags["cancel"] = True
+                try:
+                    rec["stream"].stop()
+                    rec["stream"].close()
+                except Exception:
+                    pass
+                live_end("cancelled", LIVE_CANCEL_HOLD)
+                ui["state"] = "idle"
+                log("   [ESC] annullata")
+            elif st == "proc":
+                flags["cancel"] = True
+                live_end("cancelled", LIVE_CANCEL_HOLD)
+                log("   [ESC] elaborazione annullata")
+            flags["dismiss"] = True
+            hy.reset()
+        esc_prev = esc
+        ev = hy.feed(*mac_keys.chord_edge())     # istante vero del tasto, non di questo giro
+        if ev == "start" and not rec["held"]:
+            testhooks.emit("hotkey", what="start")
+            try:
+                start_capture_mac()
+            except Exception as e:      # un microfono che non si apre non deve fermare i tasti
+                log(f"   [rec] registrazione non partita: {e}")
+                testhooks.emit("error", where="start_rec", msg=str(e)[:200])
+                rec["held"] = False
+                ui["state"] = "idle"
+                live_cancel()
+                hy.reset()
+        elif ev == "stop" and rec["held"]:
+            testhooks.emit("hotkey", what="stop")
+            stop_and_process()
         time.sleep(0.02)
 
 
@@ -1916,8 +2121,9 @@ def _draw_toggle(img, x0, y0, w, h, on, font):
 
 
 # ---------- motore grafico a canale alpha reale (UpdateLayeredWindow) ----------
-_gdi = ctypes.windll.gdi32
-_user = ctypes.windll.user32
+# Solo Windows: su macOS niente HUD (la card, un NSPanel, e' sempre disponibile) e niente GDI.
+_gdi = ctypes.windll.gdi32 if IS_WIN else None
+_user = ctypes.windll.user32 if IS_WIN else None
 
 
 class _SIZE(ctypes.Structure):
@@ -1936,22 +2142,23 @@ class _BMIH(ctypes.Structure):
                 ("biClrUsed", ctypes.c_uint32), ("biClrImportant", ctypes.c_uint32)]
 
 
-_user.GetDC.restype = wintypes.HDC
-_user.GetDC.argtypes = [wintypes.HWND]
-_user.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
-_user.UpdateLayeredWindow.restype = wintypes.BOOL
-_user.UpdateLayeredWindow.argtypes = [wintypes.HWND, wintypes.HDC, ctypes.POINTER(wintypes.POINT),
-                                      ctypes.POINTER(_SIZE), wintypes.HDC, ctypes.POINTER(wintypes.POINT),
-                                      wintypes.DWORD, ctypes.POINTER(_BLEND), wintypes.DWORD]
-_gdi.CreateCompatibleDC.restype = wintypes.HDC
-_gdi.CreateCompatibleDC.argtypes = [wintypes.HDC]
-_gdi.CreateDIBSection.restype = wintypes.HBITMAP
-_gdi.CreateDIBSection.argtypes = [wintypes.HDC, ctypes.POINTER(_BMIH), wintypes.UINT,
-                                  ctypes.POINTER(ctypes.c_void_p), wintypes.HANDLE, wintypes.DWORD]
-_gdi.SelectObject.restype = wintypes.HGDIOBJ
-_gdi.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
-_gdi.DeleteObject.argtypes = [wintypes.HGDIOBJ]
-_gdi.DeleteDC.argtypes = [wintypes.HDC]
+if IS_WIN:
+    _user.GetDC.restype = wintypes.HDC
+    _user.GetDC.argtypes = [wintypes.HWND]
+    _user.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+    _user.UpdateLayeredWindow.restype = wintypes.BOOL
+    _user.UpdateLayeredWindow.argtypes = [wintypes.HWND, wintypes.HDC, ctypes.POINTER(wintypes.POINT),
+                                          ctypes.POINTER(_SIZE), wintypes.HDC, ctypes.POINTER(wintypes.POINT),
+                                          wintypes.DWORD, ctypes.POINTER(_BLEND), wintypes.DWORD]
+    _gdi.CreateCompatibleDC.restype = wintypes.HDC
+    _gdi.CreateCompatibleDC.argtypes = [wintypes.HDC]
+    _gdi.CreateDIBSection.restype = wintypes.HBITMAP
+    _gdi.CreateDIBSection.argtypes = [wintypes.HDC, ctypes.POINTER(_BMIH), wintypes.UINT,
+                                      ctypes.POINTER(ctypes.c_void_p), wintypes.HANDLE, wintypes.DWORD]
+    _gdi.SelectObject.restype = wintypes.HGDIOBJ
+    _gdi.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
+    _gdi.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+    _gdi.DeleteDC.argtypes = [wintypes.HDC]
 
 
 def paint_layered(hwnd, x, y, img):
@@ -2227,6 +2434,7 @@ def build_ui():
 
     log(f"[alpha] finestra creata hwnd={hwnd}, loop avviato")
     live["ui"] = True              # da qui il pannello ha chi lo disegna
+    testhooks.emit("ready")
     if card_ready():               # typelib COM del caret (~0,5 s): all'avvio, mai in dettatura
         try:
             caret_mod.set_log(log)
@@ -2461,12 +2669,132 @@ def build_ui_tk():          # FALLBACK: vecchia UI tkinter (taglio-netto), usata
     return root
 
 
+def build_ui_mac(smoke=False):
+    """macOS: il loop principale e' Tk (su Aqua guida gia' NSApplication), con la radice
+    ritirata: non si vede niente di Tk. tick() gira con root.after al passo di sempre e fa quello
+    che fa tick() su Windows: incolla (thread principale) e card. La card e' un NSPanel creato
+    con PyObjC nello stesso processo (live_panel -> mac_panel). Niente HUD: qui la card c'e'
+    sempre, e l'HUD era solo la rete di sicurezza di quando mancava."""
+    root = tk.Tk()
+    root.withdraw()
+    mac_sys.set_accessory()        # da sorgente: niente icona nel Dock (nel .app: LSUIElement)
+    live["ui"] = True
+    if card_ready():
+        try:
+            caret_mod.set_log(log)
+            caret_mod.prewarm()
+            if ctx_mod is not None:
+                ctx_mod.set_log(log)
+        except Exception as e:
+            log(f"   [live] prewarm caret: {e}")
+    seen = {"tap": None, "kc": 0.0}
+
+    def keycodes():
+        """V e C del layout attivo, calcolati qui (thread principale: TIS non regge altri
+        thread) e tenuti in cache per la copia della selezione, che gira sul worker."""
+        now = time.perf_counter()
+        if now >= seen["kc"]:
+            seen["kc"] = now + mac_sys.KEYCODES_EVERY
+            mac_sys.refresh_keycodes()
+
+    def report_tap():
+        """Evento "ready" (o "tap_failed") per la CI, una volta per ogni cambio di stato."""
+        st, why = ("active", "") if smoke else mac_keys.status()
+        if st == seen["tap"] or st in ("off", "starting"):
+            return
+        seen["tap"] = st
+        if st == "active":
+            testhooks.emit("ready")
+        else:
+            testhooks.emit("tap_failed", why=why)
+
+    def tick():
+        if flags["quit"]:
+            root.quit()
+            return
+        try:
+            while insert_jobs:
+                h, t = insert_jobs.pop(0)
+                insert_text(h, t)
+                live_pasted()          # il pannello si chiude qui, subito dopo l'incolla
+            live_tick()
+            report_tap()
+            keycodes()
+        except Exception as e:
+            log(f"[ui] errore loop: {e}")
+            testhooks.emit("error", where="ui", msg=str(e)[:200])
+        root.after(int(1000 * (LOOP_LIVE if live_panel_open() else LOOP_IDLE)), tick)
+
+    log("[mac] loop principale avviato (Tk, radice nascosta)")
+    root.after(0, tick)
+    root.mainloop()
+    live["ui"] = False
+    try:
+        if live["panel"] is not None:
+            live["panel"].destroy()
+    except Exception:
+        pass
+    try:
+        root.destroy()
+    except Exception:
+        pass
+
+
+def _ensure_key_mac(force=False):
+    """macOS: prima della chiave, la pagina dei Permessi (Microfono, Accessibilita', consiglio
+    per Fn). Si apre al primo avvio dell'app (.app senza chiave), con --setup, o quando manca un
+    permesso. Chiusa senza chiave quando la chiave serviva: si esce, come su Windows."""
+    global GROQ_KEY, USE_GROQ
+    need_key = force or (not GROQ_KEY and paths.FROZEN)
+    try:
+        perms_ok = mac_sys.permissions_ok()
+    except Exception:
+        perms_ok = False
+    need_perm = force or not perms_ok or (paths.FROZEN and not GROQ_KEY)
+    if not need_key and not need_perm:
+        return True
+    pages = (["permissions"] if need_perm else []) + (["key"] if need_key else [])
+    try:
+        import first_run
+        fx = live["fetch"]
+        key = first_run.ask_for_key(paths.config("groq_key.txt"), log=log,
+                                    live_status=fx.snapshot if fx is not None else None,
+                                    pages=pages)
+    except Exception as e:
+        log(f"[setup] finestra del primo avvio non disponibile: {e}")
+        key = None
+    if key:
+        GROQ_KEY, USE_GROQ = key, True
+        return True
+    if not need_key or GROQ_KEY:
+        return True
+    log("[setup] nessuna chiave Groq: esco. Al prossimo avvio la finestra si riapre.")
+    return False
+
+
+def first_run_page(page):
+    """WAVETYPE_FIRST_RUN_PAGE=permissions|key: apre solo la finestra del primo avvio su quella
+    pagina (per gli screenshot della CI), senza salvare niente, poi esce."""
+    try:
+        import first_run
+        first_run.KeyWindow(os.devnull, log=log, dry=True, pages=[page]).run()
+    except Exception as e:
+        log(f"[setup] pagina {page!r} non aperta: {e}")
+        testhooks.emit("error", where="first_run", msg=str(e)[:200])
+
+
 def ensure_key(force=False):
     """Serve una chiave Groq? Dall'eseguibile si': senza, niente trascrive (il motore locale non
     e' nel pacchetto), quindi si apre la finestra del primo avvio (first_run.py). Dal sorgente
     tutto come prima: senza chiave parte il motore locale. `force` (--setup) la apre comunque.
-    False = l'utente ha chiuso la finestra senza chiave: si esce."""
+    False = l'utente ha chiuso la finestra senza chiave: si esce.
+    WAVETYPE_SKIP_FIRST_RUN=1 (CI): la finestra non si apre mai da sola; senza chiave si usa il
+    motore locale."""
     global GROQ_KEY, USE_GROQ
+    if not force and os.environ.get("WAVETYPE_SKIP_FIRST_RUN") == "1":
+        return True
+    if IS_MAC:
+        return _ensure_key_mac(force)
     if not force and (GROQ_KEY or not paths.FROZEN):
         return True
     try:
@@ -2521,12 +2849,28 @@ def _arg_value(name):
     return None
 
 
+MAC_LOCK = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Wavetype",
+                        "wavetype.lock")
+
+
 def main():
     global model, _singleton
-    _singleton = win32event.CreateMutex(None, False, "Wavetype_singleton")
-    if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
-        log("gia' in esecuzione — esco (single instance).")
+    page = os.environ.get("WAVETYPE_FIRST_RUN_PAGE")
+    if page:                              # CI: solo la finestra del primo avvio, poi via
+        first_run_page(page)
         return
+    if IS_MAC:
+        mac_sys.set_log(log)
+        mac_keys.set_log(log)
+        _singleton = mac_sys.single_instance(MAC_LOCK)
+        if _singleton is None:
+            log("gia' in esecuzione — esco (single instance).")
+            return
+    else:
+        _singleton = win32event.CreateMutex(None, False, "Wavetype_singleton")
+        if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
+            log("gia' in esecuzione — esco (single instance).")
+            return
     if paths.FROZEN:
         try:                              # l'exe non ha console: un crash nativo finisce qui
             import faulthandler
@@ -2563,19 +2907,37 @@ def main():
         except Exception as e:
             log(f"[locale] caricamento modello fallito ({e}) — uso solo Groq.")
             model = None
-    log("PRONTO. Toggle Win+Ctrl per registrare/fermare. Win+Ctrl+R recupera l'ultima "
-        "registrazione. Win+Ctrl+T cambia lo stile della card. Win+Ctrl+Q per chiudere.")
+    if IS_MAC:
+        log("PRONTO. Fn (o Ctrl+Option): tocca per registrare/fermare, tieni premuto per parlare "
+            "finche' tieni. Ctrl+Option+R recupera l'ultima registrazione, +T cambia lo stile "
+            "della card, +Q chiude.")
+    else:
+        log("PRONTO. Toggle Win+Ctrl per registrare/fermare. Win+Ctrl+R recupera l'ultima "
+            "registrazione. Win+Ctrl+T cambia lo stile della card. Win+Ctrl+Q per chiudere.")
     prune_archive()
     threading.Thread(target=set_mic_max, daemon=True).start()   # COM isolato su thread separato
     if USE_LLM and not USE_GROQ:             # scalda qwen locale solo se Groq non c'e'
         threading.Thread(target=lambda: llm_format("ciao", "it"), daemon=True).start()
     if smoke is None:
-        threading.Thread(target=worker, daemon=True).start()
+        if IS_MAC:
+            mac_keys.start(log)             # tap dei tasti sul suo thread (riprova ogni 2 s)
+        threading.Thread(target=worker_mac if IS_MAC else worker, daemon=True).start()
     else:
         secs = float(smoke or 8)
         log(f"[smoke] niente tasti globali, esco da solo fra {secs:.0f}s")
         threading.Thread(target=smoke_checks, daemon=True).start()
         threading.Timer(secs, lambda: flags.__setitem__("quit", True)).start()
+    if IS_MAC:
+        try:
+            build_ui_mac(smoke=smoke is not None)
+        except Exception as e:
+            log(f"[ui] loop Tk non disponibile ({e}) — solo console")
+            testhooks.emit("error", where="ui", msg=str(e)[:200])
+            live["ui"] = False
+            while not flags["quit"]:
+                time.sleep(0.2)
+        log("uscita.")
+        return
     try:
         build_ui()                          # motore alpha (blocca in PumpMessages)
     except Exception as e:

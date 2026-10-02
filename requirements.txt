@@ -4,10 +4,16 @@ sounddevice
 numpy
 httpx
 Pillow
-keyboard
-pywin32
-comtypes
-pycaw
+keyboard; sys_platform == "win32"
+pywin32; sys_platform == "win32"
+comtypes; sys_platform == "win32"
+pycaw; sys_platform == "win32"
+
+# macOS: hotkeys (CGEventTap), live card (NSPanel), caret and context (Accessibility), permissions
+pyobjc-framework-Cocoa; sys_platform == "darwin"
+pyobjc-framework-Quartz; sys_platform == "darwin"
+pyobjc-framework-ApplicationServices; sys_platform == "darwin"
+pyobjc-framework-AVFoundation; sys_platform == "darwin"
 
 # Optional: FLAC encoding before upload (smaller, faster uploads).
 # Without it, audio is sent as WAV.

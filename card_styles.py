@@ -22,6 +22,7 @@ costruisce una volta e resta in cache: per frame si disegnano solo meter, timer 
 """
 import math
 import os
+import sys
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -30,6 +31,13 @@ import paths
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 FONT_DIR = paths.resource(os.path.join("assets", "fonts"), ROOT)
+
+# i tasti scritti sulla card sono quelli veri della piattaforma (wavetype.py): su Mac la
+# dettatura e' Fn (o Ctrl+Option), il recupero Ctrl+Option+R, l'annulla Cmd+Z
+if sys.platform == "darwin":
+    K_CHORD, K_RECOVER, K_UNDO = "fn", "Ctrl+Opt+R", "Cmd+Z"
+else:
+    K_CHORD, K_RECOVER, K_UNDO = "Win+Ctrl", "Win+Ctrl+R", "Ctrl+Z"
 
 STYLES = ("stamp", "glyph", "signal")
 DEFAULT_STYLE = "signal"
@@ -44,8 +52,8 @@ FOOT = ("paused", "cancelled", "offline", "no_audio", "unrecovered")   # fasi co
 NO_TIMER = ("cancelled", "no_audio")                                   # fasi senza il tempo a destra
 # pie' di pagina del recupero: (sinistra, tasto, destra). Copy inglese, nessun carattere difensivo.
 R_FOOTERS = {
-    "no_audio": ("Dictate once, then", "Win+Ctrl+R", "brings it back"),
-    "unrecovered": ("Audio kept", "Win+Ctrl+R", "try again"),
+    "no_audio": ("Dictate once, then", K_RECOVER, "brings it back"),
+    "unrecovered": ("Audio kept", K_RECOVER, "try again"),
 }
 
 # file dei font (OFL, sottoinsieme "latin" di Google Fonts: vedi assets/fonts/README.txt)
@@ -63,10 +71,17 @@ FONT_FILES = {
 _FONTS = {}
 
 
-def _fallback_font(px):
+def _fallback_paths():
+    """Font di sistema da provare in ordine quando un file di assets/fonts manca."""
+    if sys.platform == "darwin":
+        return ["/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc",
+                "/System/Library/Fonts/Supplemental/Arial.ttf"]
     fonts = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
-    for name in ("SegUIVar.ttf", "segoeui.ttf", "arial.ttf"):
-        p = os.path.join(fonts, name)
+    return [os.path.join(fonts, name) for name in ("SegUIVar.ttf", "segoeui.ttf", "arial.ttf")]
+
+
+def _fallback_font(px):
+    for p in _fallback_paths():
         if os.path.exists(p):
             try:
                 return ImageFont.truetype(p, px)
@@ -400,8 +415,8 @@ E_YOU = "You"
 # pie' di pagina: (sinistra, tasto, destra). Copy inglese, nessun carattere difensivo.
 E_FOOTERS = {
     "e_cancelled": ("Selection untouched", "", ""),
-    "e_offline": ("Selection unchanged", "Win+Ctrl", "try again"),
-    "e_nothing": ("Select text, then", "Win+Ctrl", "edit"),
+    "e_offline": ("Selection unchanged", K_CHORD, "try again"),
+    "e_nothing": ("Select text, then", K_CHORD, "edit"),
 }
 
 
@@ -714,7 +729,7 @@ class Stamp(Style):
         gap = self.px(7)
         if mode == "paused":
             x = x0
-            x += self._key(inner, "Win+Ctrl", int(x), cy) + gap
+            x += self._key(inner, K_CHORD, int(x), cy) + gap
             text_center(inner, "insert", f, INK, x, cy)
             tw = label_width("cancel", f)
             kw = self._keyw("Esc")
@@ -724,9 +739,9 @@ class Stamp(Style):
         elif mode == "cancelled":
             text_center(inner, "Nothing inserted", f, INK, x0, cy)
             tw = label_width("bring it back", f)
-            kw = self._keyw("Win+Ctrl+R")
+            kw = self._keyw(K_RECOVER)
             x = xr - tw - gap - kw
-            self._key(inner, "Win+Ctrl+R", int(x), cy)
+            self._key(inner, K_RECOVER, int(x), cy)
             text_center(inner, "bring it back", f, INK, x + kw + gap, cy)
         elif mode == "offline":
             text_center(inner, "Preview off, still recording", f, INK, x0, cy)
@@ -1049,7 +1064,7 @@ class Stamp(Style):
         t1, t2 = panel.edit_done_text(), panel.edit_words_text()
         chk = self.px(10)
         gap = self.px(9)
-        kw = self._keyw("Ctrl+Z")
+        kw = self._keyw(K_UNDO)
         w = int(round(self.px(14) + chk + self.px(7) + label_width(t1, f) + gap + label_width(t2, fe)
                       + gap + kw + self.px(4) + label_width("undo", fk) + self.px(8) + 2 * self.b()))
         h = self.ipx(38)
@@ -1069,7 +1084,7 @@ class Stamp(Style):
         x += chk + self.px(7)
         x += text_center(img, t1, f, INK, x, cy) + gap
         x += text_center(img, t2, fe, INK, x, cy + self.px(0.5), alpha=0.75) + gap
-        self._key(img, "Ctrl+Z", int(x), cy)
+        self._key(img, K_UNDO, int(x), cy)
         text_center(img, "undo", fk, INK, x + kw + self.px(4), cy)
         return img
 
@@ -1299,7 +1314,7 @@ class Glyph(Style):
         xr = card.width - self.px(16)
         gap = self.px(6)
         if mode == "paused":
-            x = x0 + self._key(card, "WIN+CTRL", int(x0), cy) + gap
+            x = x0 + self._key(card, K_CHORD.upper(), int(x0), cy) + gap
             text_center(card, "INSERT", f, B_GREY, x, cy, tr)
             tw = label_width("CANCEL", f, tr)
             kw = self._keyw("ESC")
@@ -1309,9 +1324,9 @@ class Glyph(Style):
         elif mode == "cancelled":
             text_center(card, "NOTHING INSERTED", f, B_GREY, x0, cy, tr)
             tw = label_width("BRINGS IT BACK", f, tr)
-            kw = self._keyw("WIN+CTRL+R")
+            kw = self._keyw(K_RECOVER.upper())
             x = xr - tw - gap - kw
-            self._key(card, "WIN+CTRL+R", int(x), cy)
+            self._key(card, K_RECOVER.upper(), int(x), cy)
             text_center(card, "BRINGS IT BACK", f, B_GREY, x + kw + gap, cy, tr)
         elif mode == "offline":
             text_center(card, "PREVIEW OFF · STILL RECORDING", f, B_GREY, x0, cy, tr)
@@ -1795,7 +1810,7 @@ class Signal(Style):
         xr = card.width - self.px(16)
         gap = self.px(6)
         if mode == "paused":
-            x = x0 + self._key(card, "WIN+CTRL", int(x0), cy) + gap
+            x = x0 + self._key(card, K_CHORD.upper(), int(x0), cy) + gap
             text_center(card, "INSERT", f, D_DIM, x, cy, tr)
             tw = label_width("CANCEL", f, tr)
             kw = self._keyw("ESC")
@@ -1805,9 +1820,9 @@ class Signal(Style):
         elif mode == "cancelled":
             text_center(card, "NOTHING INSERTED", f, D_DIM, x0, cy, tr)
             tw = label_width("BRINGS IT BACK", f, tr)
-            kw = self._keyw("WIN+CTRL+R")
+            kw = self._keyw(K_RECOVER.upper())
             x = xr - tw - gap - kw
-            self._key(card, "WIN+CTRL+R", int(x), cy)
+            self._key(card, K_RECOVER.upper(), int(x), cy)
             text_center(card, "BRINGS IT BACK", f, D_DIM, x + kw + gap, cy, tr)
         elif mode == "offline":
             text_center(card, "PREVIEW OFF", f, D_DIM, x0, cy, tr)

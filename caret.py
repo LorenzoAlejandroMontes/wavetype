@@ -14,25 +14,33 @@ Catena di ripiego (si ferma al primo che risponde, budget totale ~150 ms):
 Tutto in try/except: un errore qui non deve mai far cadere la dettatura.
 Il COM va inizializzato sul thread che chiama (lo facciamo da soli, e' idempotente).
 
+Su macOS lo stesso contratto lo da' mac_ax.py (AX: AXBoundsForRange sul range selezionato):
+in fondo a questo file le funzioni pubbliche vengono sostituite dalle sue.
+
 NOTA DPI: le coordinate cambiano se il processo e' "DPI unaware" (Windows le scala).
 Usa `dpi_scope()` attorno alle chiamate: alza la consapevolezza DPI SOLO su questo
 thread e la rimette com'era, cosi' le coordinate sono pixel fisici veri.
 """
 import ctypes
+import sys
 import time
-from ctypes import wintypes
 
-_user = ctypes.windll.user32
+IS_WIN = sys.platform == "win32"
+_user = None
 _shcore = None
-try:
-    _shcore = ctypes.windll.shcore
-except Exception:
-    pass
+if IS_WIN:                     # su macOS/Linux ne' windll ne' wintypes: il modulo deve importarsi lo stesso
+    from ctypes import wintypes
+    _user = ctypes.windll.user32
+    try:
+        _shcore = ctypes.windll.shcore
+    except Exception:
+        pass
 
 # --- budget: se sforiamo, si smette di provare e si torna None ---
 BUDGET_S = 0.150
 
 _LOG = [print]
+LAST = {"source": None}        # gradino che ha risposto all'ultima get_caret_rect (ganci di test)
 
 
 def set_log(fn):
@@ -283,12 +291,13 @@ def _try_msaa(hwnd, deadline):
 
 
 # ---------------------------------------------------------------- rung 3: GetGUIThreadInfo
-class GUITHREADINFO(ctypes.Structure):
-    _fields_ = [("cbSize", wintypes.DWORD), ("flags", wintypes.DWORD),
-                ("hwndActive", wintypes.HWND), ("hwndFocus", wintypes.HWND),
-                ("hwndCapture", wintypes.HWND), ("hwndMenuOwner", wintypes.HWND),
-                ("hwndMoveSize", wintypes.HWND), ("hwndCaret", wintypes.HWND),
-                ("rcCaret", wintypes.RECT)]
+if IS_WIN:
+    class GUITHREADINFO(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.DWORD), ("flags", wintypes.DWORD),
+                    ("hwndActive", wintypes.HWND), ("hwndFocus", wintypes.HWND),
+                    ("hwndCapture", wintypes.HWND), ("hwndMenuOwner", wintypes.HWND),
+                    ("hwndMoveSize", wintypes.HWND), ("hwndCaret", wintypes.HWND),
+                    ("rcCaret", wintypes.RECT)]
 
 
 def _try_guithread(hwnd, deadline):
@@ -350,8 +359,10 @@ def _get_caret_rect_inner(hwnd, budget):
             got = None
         if got:
             rung, rect = got
+            LAST["source"] = rung
             log(f"   [caret] {rung} -> {rect} in {(time.perf_counter()-t0)*1000:.0f} ms")
             return rect
+    LAST["source"] = None
     log(f"   [caret] nessun gradino ha risposto ({(time.perf_counter()-t0)*1000:.0f} ms)")
     return None
 
@@ -377,3 +388,28 @@ def get_caret_rect_verbose(hwnd=None, budget=BUDGET_S):
             if got:
                 return got[1], got[0], (time.perf_counter() - t0) * 1000
         return None, None, (time.perf_counter() - t0) * 1000
+
+
+def cursor_pos():
+    """Posizione del mouse in pixel fisici (va chiamata dentro dpi_scope())."""
+    px = wintypes.POINT()
+    _user.GetCursorPos(ctypes.byref(px))
+    return px.x, px.y
+
+
+def foreground():
+    """La finestra in primo piano (il bersaglio della dettatura)."""
+    return _user.GetForegroundWindow()
+
+
+# ---------------------------------------------------------------- macOS
+if sys.platform == "darwin":
+    # Stesse funzioni, stesso contratto (pixel, origine in alto a sinistra), fatte con AX.
+    import mac_ax
+    from mac_ax import (get_caret_rect, get_caret_rect_verbose, prewarm, work_area,  # noqa: F401,F811
+                        dpi_for_point, dpi_scope, cursor_pos, LAST)
+    from mac_ax import frontmost_pid as foreground  # noqa: F401,F811
+
+    def set_log(fn):  # noqa: F811
+        _LOG[0] = fn
+        mac_ax.set_log(fn)

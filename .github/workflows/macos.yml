@@ -1,0 +1,182 @@
+# Wavetype for macOS: build the .app and .dmg on an Apple silicon runner, then use them for real:
+# launch the built binary, dictate a spoken WAV into TextEdit with synthetic hotkeys, screenshot
+# every phase. Results are committed to the branch ci-mac-results (runs/<run>.<attempt>-<sha>/) and
+# uploaded as a workflow artifact with the .dmg. Free on public repositories (standard runners).
+#
+# Least privilege: the mac job (pip, PyInstaller, the app) can only read the repo and keeps no git
+# token; the signing secrets live only in the sign step, which runs no pip and no PyInstaller; the
+# write token lives only in the publish job on Linux, which runs nothing but git.
+name: macOS build and test
+
+on:
+  push:
+    branches: [macos]
+  workflow_dispatch:
+    inputs:
+      hardened:
+        description: "Hardened runtime on the ad-hoc build (1 = same rules as the notarized app, 0 = off)"
+        required: false
+        default: "1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      RESULTS: ${{ github.workspace }}/results
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Results folder
+        run: mkdir -p "$RESULTS/tests" "$RESULTS/shots" "$RESULTS/logs"
+
+      - name: Build .app (no credentials in this step)
+        id: build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          PYTHON="$(command -v python)" bash packaging/mac/build.sh app 2>&1 | tee "$RESULTS/build.log"
+
+      - name: Sign and DMG
+        id: sign
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        env:
+          WAVETYPE_HARDENED: ${{ inputs.hardened || '1' }}
+          # all optional: empty -> ad-hoc signature, no notarization (see packaging/mac/SIGNING.md)
+          DEVID_P12_BASE64: ${{ secrets.DEVID_P12_BASE64 }}
+          DEVID_P12_PASSWORD: ${{ secrets.DEVID_P12_PASSWORD }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          if [ -n "$DEVID_P12_BASE64" ]; then export DEVID_IDENTITY=auto; fi
+          # sign.log goes to a public branch, where GitHub masks nothing: every secret value (and
+          # each of its lines) is replaced before the file is written
+          bash packaging/mac/build.sh sign 2>&1 | /usr/bin/python3 -u -c '
+          import os, sys
+          vals = []
+          for k in ("DEVID_P12_BASE64", "DEVID_P12_PASSWORD", "APP_STORE_CONNECT_PRIVATE_KEY",
+                    "APP_STORE_CONNECT_KEY_IDENTIFIER", "APP_STORE_CONNECT_ISSUER_ID"):
+              v = os.environ.get(k) or ""
+              vals += [x.strip() for x in [v] + v.splitlines() if len(x.strip()) >= 4]
+          vals.sort(key=len, reverse=True)
+          for line in sys.stdin:
+              for v in vals:
+                  line = line.replace(v, "***")
+              sys.stdout.write(line)
+          ' | tee "$RESULTS/sign.log"
+
+      - name: Machine facts (macOS, SIP, audio, TCC grants)
+        if: always()
+        run: |
+          {
+            echo "## sw_vers"; sw_vers
+            echo "## uname"; uname -a
+            echo "## csrutil status"; csrutil status
+            echo "## python"; python -VV; python -c "import tkinter; print('tk', tkinter.TkVersion)"
+            echo "## displays"; system_profiler SPDisplaysDataType
+            echo "## build step outcome: ${{ steps.build.outcome }} | sign: ${{ steps.sign.outcome }}"
+          } > "$RESULTS/env.txt" 2>&1 || true
+          system_profiler SPAudioDataType > "$RESULTS/audio.txt" 2>&1 || true
+          # who may tap keys, post events, record the screen and use the microphone on this runner
+          Q="select service, client, auth_value from access where service in ('kTCCServiceAccessibility','kTCCServicePostEvent','kTCCServiceListenEvent','kTCCServiceMicrophone','kTCCServiceScreenCapture') order by service, client;"
+          sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" "$Q" > "$RESULTS/tcc_system.txt" 2>&1 || true
+          sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" "$Q" > "$RESULTS/tcc_user.txt" 2>&1 || true
+          cat "$RESULTS/env.txt" | head -40
+
+      - name: Platform-neutral tests
+        if: always()
+        run: python packaging/mac/ci/e2e.py tests
+
+      - name: Test voice (say + afconvert)
+        if: always()
+        run: |
+          mkdir -p build/mac
+          say -o build/mac/test.aiff "Hello Sarah, the meeting moved to Thursday at three. Can you bring the slides?"
+          afconvert -f WAVE -d LEI16@16000 -c 1 build/mac/test.aiff "$RESULTS/test.wav"
+          afinfo "$RESULTS/test.wav" | tee "$RESULTS/test_wav_info.txt"
+
+      - name: End-to-end on the built app
+        if: always()
+        timeout-minutes: 60
+        env:
+          TEST_WAV: ${{ github.workspace }}/results/test.wav
+        run: |
+          PY=build/mac/venv/bin/python
+          if [ ! -x "$PY" ]; then
+            PY=python
+            python -m pip install -q pyobjc-framework-Quartz pyobjc-framework-ApplicationServices || true
+          fi
+          "$PY" packaging/mac/ci/e2e.py e2e
+
+      - name: Summary
+        if: always()
+        run: python packaging/mac/ci/e2e.py summary
+
+      - name: Upload .dmg and results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wavetype-mac-${{ github.run_number }}.${{ github.run_attempt }}
+          path: |
+            results/
+            dist/*.dmg
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload results for the publish job
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: results-${{ github.run_number }}.${{ github.run_attempt }}
+          path: results/
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Verdict
+        if: always()
+        run: |
+          python - <<'EOF'
+          import json, sys
+          s = json.load(open("results/summary.json"))
+          for k, v in s["checks"].items():
+              print(("PASS " if v["pass"] else "FAIL ") + k)
+          print("tests:", {t: v["line"] for t, v in s["tests"].items()})
+          sys.exit(0 if s["all_ok"] else 1)
+          EOF
+
+  publish:
+    # the only job with a write token: no pip, no PyInstaller, no app, just git on the results
+    needs: mac
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: results-${{ github.run_number }}.${{ github.run_attempt }}
+          path: results
+
+      - name: Publish results to ci-mac-results
+        run: bash packaging/mac/ci/publish_results.sh

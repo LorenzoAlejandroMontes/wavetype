@@ -12,6 +12,12 @@ un solo accento lime. Tutto cio' che si vede e' disegnato con PIL coi font di as
 La prova della chiave e' la chiamata piu' economica che Groq ha: GET /openai/v1/models
 (nessun token consumato). 200 = buona, 401/403 = rifiutata, altro = rete.
 
+Su macOS prima della chiave c'e' la pagina dei Permessi (spec mac del 02/10): Microfono e
+Accessibilita', ciascuno col suo stato (riletto ogni secondo) e un bottone che apre il
+pannello giusto delle Impostazioni di Sistema, piu' una riga per il tasto Fn ("Press fn key
+to: Do Nothing", se no Fn apre le emoji o la dettatura di sistema). pages=["permissions",
+"key"] le mostra in fila; una pagina sola si puo' aprire da sola (WAVETYPE_FIRST_RUN_PAGE).
+
 Da riga di comando (solo per guardarla, niente viene salvato):
   python first_run.py --shot out.png [--state idle|typed|checking|invalid|network|ok]
                       [--live downloading:120|extracting:60|ready]   (riga del modello live)
@@ -23,6 +29,8 @@ import re
 import sys
 import threading
 import webbrowser
+
+IS_MAC = sys.platform == "darwin"
 
 import tkinter as tk
 from PIL import Image, ImageDraw, ImageTk
@@ -67,6 +75,23 @@ STATUS = {
     "network": ("CAN'T REACH GROQ. CHECK YOUR CONNECTION AND RETRY", ORANGE),
     "ok": ("KEY SAVED. PRESS WIN + CTRL IN ANY APP TO DICTATE", LIME),
 }
+# pie' della pagina della chiave: i tasti veri della piattaforma
+FOOT_KEYS = (("kbd", "Win"), ("txt", "+"), ("kbd", "Ctrl"), ("txt", "start and stop, in any app"))
+if IS_MAC:
+    STATUS["ok"] = ("KEY SAVED. PRESS FN IN ANY APP TO DICTATE", LIME)
+    FOOT_KEYS = (("kbd", "fn"), ("txt", "tap or hold, in any app"))
+
+# ---- pagina dei permessi (solo macOS). Copy inglese, beneficio, nessuna frase difensiva ----
+P_HEADLINE = "Two switches, then just talk."
+P_SUB = "Wavetype hears you through the microphone and types wherever your cursor is."
+P_ROWS = (
+    # (id, numero, etichetta del passo, titolo, sottotitolo)
+    ("mic", "01", "LISTEN", "Microphone", "Hears what you say"),
+    ("ax", "02", "TYPE", "Accessibility", "Types into the app you're using"),
+    ("fn", "03", "SHORTCUT", "Set fn to Do Nothing", "System Settings > Keyboard > Press fn key to"),
+)
+P_ON, P_OFF, P_OPEN = "ALLOWED", "ALLOW", "OPEN"
+P_CTA = "Continue"
 # riga del modello live (model_fetch.py), sotto la chiave salvata: le parole accanto al cursore
 LIVE_LABEL = "LIVE WORDS NEXT TO YOUR CARET"
 LIVE_UNPACK = "UNPACKING"
@@ -112,7 +137,8 @@ def clipboard_key(root):
 
 
 # ------------------------------------------------------------------ DPI e barra del titolo
-_user = ctypes.windll.user32
+# Su macOS niente windll: Tk su Aqua ragiona gia' in punti, la scala resta 1 (vedi _SystemDpi).
+_user = ctypes.windll.user32 if sys.platform == "win32" else None
 
 
 class _SystemDpi:
@@ -205,7 +231,11 @@ def _wave(img, x0, x1, cy, amp, k, color):
 
 
 class KeyWindow:
-    def __init__(self, save_path, log=print, dry=False, live_status=None):
+    def __init__(self, save_path, log=print, dry=False, live_status=None, pages=None):
+        self.pages = list(pages or ["key"])   # "permissions" (solo Mac) e/o "key", in quest'ordine
+        self.page = self.pages[0]
+        self.perm = {"mic": None, "ax": None}  # stato dei permessi, riletto ogni secondo
+        self.ax_asked = False
         self.save_path = save_path
         self.log = log
         self.dry = dry
@@ -257,7 +287,37 @@ class KeyWindow:
         self.H = y + 46
         self.size = (self.ipx(W), self.ipx(self.H))
 
+    def layout_perm(self):
+        """Misure della pagina dei permessi (stesso telaio della pagina della chiave)."""
+        inner = W - 2 * PAD
+        self.p_sub_lines = _wrap(P_SUB, self.f_sub, self.px(inner))
+        y = 44 + 30
+        self.p_y_head = y
+        y += 40
+        self.p_y_sub = y
+        y += 21 * len(self.p_sub_lines) + 26
+        self.p_rows = []
+        for row in P_ROWS:
+            self.p_rows.append((row, y, (PAD, y + 24, inner, 52)))
+            y += 24 + 52 + 18
+        y += 8
+        self.p_cta = (PAD, y, inner, 48)
+        y += 48 + 26
+        self.p_y_foot = y
+        self.p_H = y + 46
+
+    def page_size(self):
+        h = self.p_H if self.page == "permissions" else self.H
+        return (self.ipx(W), self.ipx(h))
+
     def hit(self, x, y):
+        if self.page == "permissions":
+            rects = [(row[0], r) for row, _y, r in self.p_rows] + [("cta", self.p_cta)]
+            for name, r in rects:
+                rx, ry, rw, rh = (self.px(v) for v in r)
+                if rx <= x <= rx + rw and ry <= y <= ry + rh:
+                    return name
+            return None
         for name, r in (("open", self.r_open), ("paste", self.r_paste), ("cta", self.r_cta)):
             rx, ry, rw, rh = (self.px(v) for v in r)
             if rx <= x <= rx + rw and ry <= y <= ry + rh:
@@ -267,8 +327,131 @@ class KeyWindow:
     def cta_enabled(self):
         return (bool(self.value()) and not self.busy) or self.state == "ok"
 
+    # --- pagina dei permessi (macOS) ---
+    def perm_state(self, pid):
+        """(testo a destra, colore, fatto?) di una riga della pagina dei permessi."""
+        if pid == "fn":
+            return P_OPEN, SOFT, False
+        v = self.perm.get(pid)
+        if v:
+            return P_ON, LIME, True
+        return P_OFF, ORANGE, False
+
+    def refresh_perm(self):
+        """Rilegge i permessi (Microfono, Accessibilita'). True se qualcosa e' cambiato."""
+        try:
+            import mac_sys
+            mic = mac_sys.mic_status() in ("granted", "unknown")
+            ax = mac_sys.ax_trusted()
+        except Exception:
+            mic = ax = False
+        new = {"mic": mic, "ax": ax}
+        changed = new != self.perm
+        self.perm = new
+        return changed
+
+    def _perm_tick(self):
+        """Ogni secondo: lo stato si aggiorna da solo quando l'utente concede il permesso."""
+        try:
+            if self.page != "permissions":
+                return
+            if self.refresh_perm():
+                self.log(f"[setup] permessi: microfono={self.perm['mic']} "
+                         f"accessibilita'={self.perm['ax']}")
+                self.redraw()
+            self.root.after(1000, self._perm_tick)
+        except tk.TclError:
+            pass
+
+    def perm_action(self, pid):
+        """Click su una riga: chiede il permesso o apre il pannello giusto delle Impostazioni."""
+        try:
+            import mac_sys
+        except Exception as e:
+            self.log(f"[setup] permessi non disponibili: {e}")
+            return
+        if pid == "mic":
+            if mac_sys.mic_status() == "undetermined":
+                mac_sys.request_mic()             # avviso di sistema, la prima volta
+            else:
+                mac_sys.open_url(mac_sys.URL_MIC)
+        elif pid == "ax":
+            if not self.ax_asked and not mac_sys.ax_trusted():
+                self.ax_asked = True
+                mac_sys.ax_trusted(prompt=True)   # avviso di sistema con "Apri Impostazioni"
+            else:
+                mac_sys.open_url(mac_sys.URL_AX)
+        elif pid == "fn":
+            mac_sys.open_url(mac_sys.URL_KEYBOARD)
+
+    def render_perm(self):
+        k = self.k
+        px = self.px
+        img = Image.new("RGBA", self.size, BG + (255,))
+        d = ImageDraw.Draw(img)
+        one = max(1, self.ipx(1))
+        cs.put_center(img, cs.glow_disc(px(3.5), px(6), LIME, 0.55), px(PAD + 4), px(22))
+        cs.put_center(img, cs.disc(px(3.5), LIME), px(PAD + 4), px(22))
+        cs.text_center(img, "WAVETYPE", self.f_lab, TEXT, px(PAD + 16), px(22), px(1.2))
+        _wave(img, px(170), px(W - PAD), px(22), px(9), k, LIME)
+        d.rectangle([0, self.ipx(44) - one, self.size[0], self.ipx(44) - 1], fill=RULE + (255,))
+        cs.text_center(img, P_HEADLINE, self.f_head, TEXT, px(PAD), px(self.p_y_head + 14), px(-0.3))
+        for i, ln in enumerate(self.p_sub_lines):
+            cs.text_center(img, ln, self.f_sub, SOFT, px(PAD), px(self.p_y_sub + 10 + 21 * i))
+        for (pid, num, step, title, sub), y, r in self.p_rows:
+            self._step(img, num, step, y)
+            x, ry, w, h = r
+            hov = self.hover == pid
+            right, col, done = self.perm_state(pid)
+            border = LIME if done else (cs.hexc("#3A3D44") if hov else LINE)
+            _rrect(img, px(x), px(ry), px(w), px(h), px(10), BTN_HOVER if hov else BTN,
+                   border=border, bw=one)
+            cs.text_center(img, title, self.f_btn, TEXT, px(x + 16), px(ry + 18))
+            cs.text_center(img, sub, self.f_key, DIM, px(x + 16), px(ry + 36))
+            rw = cs.label_width(right, self.f_lab, px(0.8))
+            if done:
+                self._check(img, px(x + w - 22), px(ry + h / 2), LIME)
+                cs.text_center(img, right, self.f_lab, LIME, px(x + w - 36) - rw, px(ry + h / 2), px(0.8))
+            else:
+                self._arrow(img, px(x + w - 22), px(ry + h / 2), LIME if hov else col)
+                cs.text_center(img, right, self.f_lab, LIME if hov else col,
+                               px(x + w - 38) - rw, px(ry + h / 2), px(0.8))
+        x, y, w, h = self.p_cta
+        fill = LIME_HOVER if self.hover == "cta" else LIME
+        _rrect(img, px(x), px(y), px(w), px(h), px(10), fill)
+        tw = cs.label_width(P_CTA, self.f_cta)
+        cs.text_center(img, P_CTA, self.f_cta, BG, px(x + w / 2) - tw / 2, px(y + h / 2))
+        d.rectangle([0, self.ipx(self.p_y_foot) - one, self.size[0], self.ipx(self.p_y_foot) - 1],
+                    fill=RULE + (255,))
+        cy = px(self.p_y_foot + 23)
+        xx = px(PAD)
+        for part in FOOT_KEYS:
+            xx += self._foot_part(img, part, xx, cy) + px(6)
+        self._foot_part(img, ("txt", "cancel"), px(W - PAD) - cs.label_width("cancel", self.f_key), cy)
+        ew = cs.label_width("cancel", self.f_key) + px(6)
+        self._foot_part(img, ("kbd", "Esc"), px(W - PAD) - ew - self._kbd_w("Esc"), cy)
+        return img
+
+    def next_page(self):
+        """Pagina dopo (permessi -> chiave). Dopo l'ultima la finestra si chiude."""
+        i = self.pages.index(self.page) if self.page in self.pages else len(self.pages)
+        if i + 1 >= len(self.pages):
+            self.root.destroy()
+            return
+        self.page = self.pages[i + 1]
+        self.hover = None
+        self.size = self.page_size()
+        w, h = self.size
+        self.canvas.configure(width=w, height=h)
+        self.root.geometry(f"{w}x{h}")
+        self.canvas.itemconfigure(self.entry_win, state="normal")
+        self.redraw()
+        self.on_focus_in()
+
     # --- disegno di tutta la finestra (tranne il testo del campo, che e' un widget Tk) ---
     def render(self):
+        if self.page == "permissions":
+            return self.render_perm()
         k = self.k
         px = self.px
         img = Image.new("RGBA", self.size, BG + (255,))
@@ -337,7 +520,7 @@ class KeyWindow:
                     fill=RULE + (255,))
         cy = px(self.y_foot + 23)
         xx = px(PAD)
-        for part in (("kbd", "Win"), ("txt", "+"), ("kbd", "Ctrl"), ("txt", "start and stop, in any app")):
+        for part in FOOT_KEYS:
             xx += self._foot_part(img, part, xx, cy) + px(6)
         self._foot_part(img, ("txt", "cancel"), px(W - PAD) - cs.label_width("cancel", self.f_key), cy)
         ew = cs.label_width("cancel", self.f_key) + px(6)
@@ -493,6 +676,9 @@ class KeyWindow:
             self.submit()
 
     def submit(self):
+        if self.page == "permissions":          # permessi: avanti (o chiudi, se e' l'ultima)
+            self.next_page()
+            return
         if self.state == "ok":                  # chiave salvata: il bottone chiude e l'app parte
             self.root.destroy()
             return
@@ -550,6 +736,12 @@ class KeyWindow:
 
     def on_click(self, e):
         h = self.hit(e.x, e.y)
+        if self.page == "permissions":
+            if h == "cta":
+                self.next_page()
+            elif h in ("mic", "ax", "fn"):
+                self.perm_action(h)
+            return
         if h == "open":
             webbrowser.open(KEYS_URL)
         elif h == "paste" and not self.value():
@@ -570,6 +762,10 @@ class KeyWindow:
             self.submit()
 
     def on_focus_in(self, _e=None):
+        if self.page == "permissions":
+            if self.refresh_perm():                # tornato dalle Impostazioni: stato subito
+                self.redraw()
+            return
         if self.value() or self.busy or self.state == "ok":
             return
         k = clipboard_key(self.root)             # tornato dal browser con la chiave copiata
@@ -595,6 +791,10 @@ class KeyWindow:
             self.k = dpi.dpi / 96.0
             self.tick_n = 0
             self.layout()
+            self.layout_perm()
+            if self.page == "permissions":
+                self.refresh_perm()
+            self.size = self.page_size()
             root = self.root = tk.Tk()
             root.withdraw()
             root.title("Wavetype")
@@ -617,14 +817,19 @@ class KeyWindow:
             self.bg_item = c.create_image(0, 0, anchor="nw")
             x, y, fw, fh = self.r_field
             # font del campo: monospazio di sistema (Tk non legge i woff2 di assets/fonts)
-            fam = "Cascadia Mono" if "Cascadia Mono" in root.tk.call("font", "families") else "Consolas"
+            if IS_MAC:
+                fam = "Menlo"
+            else:
+                fam = "Cascadia Mono" if "Cascadia Mono" in root.tk.call("font", "families") else "Consolas"
             e = self.entry = tk.Entry(root, bd=0, relief="flat", highlightthickness=0,
                                       bg=self._hex(FIELD), fg=self._hex(TEXT),
                                       insertbackground=self._hex(LIME), insertwidth=max(2, self.ipx(1.5)),
                                       selectbackground=self._hex(cs.hexc("#2F3A12")),
                                       selectforeground=self._hex(TEXT), font=(fam, 11))
-            c.create_window(self.px(x + 16), self.px(y + fh / 2), anchor="w", window=e,
-                            width=self.px(fw - 16 - 8 - 62 - 10), height=self.px(24))
+            self.entry_win = c.create_window(self.px(x + 16), self.px(y + fh / 2), anchor="w", window=e,
+                                             width=self.px(fw - 16 - 8 - 62 - 10), height=self.px(24))
+            if self.page == "permissions":         # il campo della chiave sta sulla pagina dopo
+                c.itemconfigure(self.entry_win, state="hidden")
             self.placeholder = False
             self.set_placeholder(True)
             e.bind("<FocusIn>", lambda _e: self.on_entry_focus(True))
@@ -648,14 +853,17 @@ class KeyWindow:
             if preset:
                 preset(self)
             root.after(120, self.poll)
+            if self.page == "permissions":
+                root.after(1000, self._perm_tick)
             root.mainloop()
         return self.result
 
 
-def ask_for_key(save_path, log=print, live_status=None):
+def ask_for_key(save_path, log=print, live_status=None, pages=None):
     """Apre la finestra e aspetta. Torna la chiave (gia' provata e salvata) o None se chiusa.
-    `live_status`: snapshot() del download del modello live, mostrato sotto la chiave salvata."""
-    return KeyWindow(save_path, log=log, live_status=live_status).run()
+    `live_status`: snapshot() del download del modello live, mostrato sotto la chiave salvata.
+    `pages`: ["permissions", "key"] su Mac al primo avvio; None = solo la chiave, come sempre."""
+    return KeyWindow(save_path, log=log, live_status=live_status, pages=pages).run()
 
 
 # ------------------------------------------------------------------ foto per la revisione

@@ -14,6 +14,12 @@ cancella. Quindi:
                                             WAV), models/ (~750 MB), log, storico, contatori Groq
   - resource() -> la cartella dei file impacchettati (sys._MEIPASS): font, immagini
 Regola di Windows: Roaming per le impostazioni, Local per cio' che e' grande o legato al PC.
+
+Su macOS (eseguibile .app) config() e state() vanno entrambi in
+~/Library/Application Support/Wavetype. Il Mac non ha profili roaming, quindi la divisione di
+Windows non serve; ~/Library/Caches non va bene per lo stato perche' macOS la puo' svuotare da
+solo: perderebbe l'archivio delle registrazioni (il recupero) e i ~475 MB del modello live, che
+tornerebbero a scaricarsi senza preavviso.
 """
 import os
 import sys
@@ -27,8 +33,17 @@ def _user_dir(env, fallback):
     return os.path.join(base, "Wavetype")
 
 
-CONFIG_DIR = _user_dir("APPDATA", r"AppData\Roaming") if FROZEN else ""
-STATE_DIR = _user_dir("LOCALAPPDATA", r"AppData\Local") if FROZEN else ""
+def _dirs(platform, frozen):
+    """(CONFIG_DIR, STATE_DIR) per quella piattaforma. Dal sorgente: "" (la cartella di lavoro)."""
+    if not frozen:
+        return "", ""
+    if platform == "darwin":
+        d = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Wavetype")
+        return d, d
+    return _user_dir("APPDATA", r"AppData\Roaming"), _user_dir("LOCALAPPDATA", r"AppData\Local")
+
+
+CONFIG_DIR, STATE_DIR = _dirs(sys.platform, FROZEN)
 
 
 def _in(folder, name):

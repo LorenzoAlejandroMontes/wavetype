@@ -50,15 +50,17 @@ Stati di una parola:
 Disegno: Pillow -> UpdateLayeredWindow (alpha per-pixel vero), stessa tecnica di
 `paint_layered` in wavetype.py. Testo a dimensione nativa (nitido a 150%); lastra, ombre e
 texture in cache: per frame si disegnano solo parole, meter e timer.
+Su macOS la stessa immagine va in un NSPanel (mac_panel.py); caret, area di lavoro e dpi
+arrivano da caret.py, che su Mac li chiede ad AX (mac_ax.py).
 """
 import collections
 import ctypes
 import difflib
 import math
 import os
+import sys
 import time
 import unicodedata
-from ctypes import wintypes
 
 import numpy as np
 from PIL import Image
@@ -68,6 +70,12 @@ import card_styles as cs
 import edit_chips as ec
 from caret import dpi_scope
 import paths
+import testhooks
+
+IS_WIN = sys.platform == "win32"
+IS_MAC = sys.platform == "darwin"
+if IS_WIN:
+    from ctypes import wintypes
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -134,15 +142,6 @@ T_PREVIEW = 1.6           # anteprima dello stile
 LV_DT = 0.07              # un campione di livello voce ogni 70 ms (storia che scorre)
 LV_KEEP = 64
 
-# WinDLL() e non ctypes.windll.user32: `windll` e' una cache di processo, e le funzioni che ne
-# escono sono LE STESSE per tutti i moduli. wavetype.py mette i suoi argtypes sulle stesse funzioni
-# (CreateDIBSection, UpdateLayeredWindow) con le SUE classi _BMIH/_SIZE/_BLEND: chi importa per
-# ultimo vince e l'altro si prende "expected LP__BMIH instance instead of pointer to _BMIH" a ogni
-# frame (misurato: il pannello dentro wavetype.py non disegnava mai). Con un'istanza propria ogni
-# modulo tiene le sue firme.
-_user = ctypes.WinDLL("user32")
-_gdi = ctypes.WinDLL("gdi32")
-
 
 class _SIZE(ctypes.Structure):
     _fields_ = [("cx", ctypes.c_long), ("cy", ctypes.c_long)]
@@ -162,28 +161,39 @@ class _BMIH(ctypes.Structure):
                 ("biClrImportant", ctypes.c_uint32)]
 
 
-_user.GetDC.restype = wintypes.HDC
-_user.GetDC.argtypes = [wintypes.HWND]
-_user.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
-_user.UpdateLayeredWindow.restype = wintypes.BOOL
-_user.UpdateLayeredWindow.argtypes = [wintypes.HWND, wintypes.HDC, ctypes.POINTER(wintypes.POINT),
-                                      ctypes.POINTER(_SIZE), wintypes.HDC,
-                                      ctypes.POINTER(wintypes.POINT), wintypes.DWORD,
-                                      ctypes.POINTER(_BLEND), wintypes.DWORD]
-_user.FindWindowW.restype = wintypes.HWND
-_user.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
-_user.GetWindowRect.restype = wintypes.BOOL
-_user.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
-_user.GetForegroundWindow.restype = wintypes.HWND
-_gdi.CreateCompatibleDC.restype = wintypes.HDC
-_gdi.CreateCompatibleDC.argtypes = [wintypes.HDC]
-_gdi.CreateDIBSection.restype = wintypes.HBITMAP
-_gdi.CreateDIBSection.argtypes = [wintypes.HDC, ctypes.POINTER(_BMIH), wintypes.UINT,
-                                  ctypes.POINTER(ctypes.c_void_p), wintypes.HANDLE, wintypes.DWORD]
-_gdi.SelectObject.restype = wintypes.HGDIOBJ
-_gdi.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
-_gdi.DeleteObject.argtypes = [wintypes.HGDIOBJ]
-_gdi.DeleteDC.argtypes = [wintypes.HDC]
+# WinDLL() e non ctypes.windll.user32: `windll` e' una cache di processo, e le funzioni che ne
+# escono sono LE STESSE per tutti i moduli. wavetype.py mette i suoi argtypes sulle stesse funzioni
+# (CreateDIBSection, UpdateLayeredWindow) con le SUE classi _BMIH/_SIZE/_BLEND: chi importa per
+# ultimo vince e l'altro si prende "expected LP__BMIH instance instead of pointer to _BMIH" a ogni
+# frame (misurato: il pannello dentro wavetype.py non disegnava mai). Con un'istanza propria ogni
+# modulo tiene le sue firme.
+_user = _gdi = None
+if IS_WIN:                 # su macOS la finestra e' un NSPanel (mac_panel.py)
+    _user = ctypes.WinDLL("user32")
+    _gdi = ctypes.WinDLL("gdi32")
+    _user.GetDC.restype = wintypes.HDC
+    _user.GetDC.argtypes = [wintypes.HWND]
+    _user.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+    _user.UpdateLayeredWindow.restype = wintypes.BOOL
+    _user.UpdateLayeredWindow.argtypes = [wintypes.HWND, wintypes.HDC, ctypes.POINTER(wintypes.POINT),
+                                          ctypes.POINTER(_SIZE), wintypes.HDC,
+                                          ctypes.POINTER(wintypes.POINT), wintypes.DWORD,
+                                          ctypes.POINTER(_BLEND), wintypes.DWORD]
+    _user.FindWindowW.restype = wintypes.HWND
+    _user.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+    _user.GetWindowRect.restype = wintypes.BOOL
+    _user.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+    _user.GetForegroundWindow.restype = wintypes.HWND
+    _gdi.CreateCompatibleDC.restype = wintypes.HDC
+    _gdi.CreateCompatibleDC.argtypes = [wintypes.HDC]
+    _gdi.CreateDIBSection.restype = wintypes.HBITMAP
+    _gdi.CreateDIBSection.argtypes = [wintypes.HDC, ctypes.POINTER(_BMIH), wintypes.UINT,
+                                      ctypes.POINTER(ctypes.c_void_p), wintypes.HANDLE, wintypes.DWORD]
+    _gdi.SelectObject.restype = wintypes.HGDIOBJ
+    _gdi.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
+    _gdi.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+    _gdi.DeleteDC.argtypes = [wintypes.HDC]
+
 
 _PUNCT = " \t\n.,;:!?…\"'`()[]{}«»“”‘’-–—/\\"
 
@@ -457,12 +467,20 @@ class LivePanel:
                 cx, cy, _cw, ch = rect
             else:
                 try:
-                    px = wintypes.POINT()
-                    _user.GetCursorPos(ctypes.byref(px))
-                    cx, cy = px.x, px.y
+                    if IS_MAC:                   # niente caret: il mouse dice qual e' lo schermo
+                        cx, cy = caret_mod.cursor_pos()
+                    else:
+                        px = wintypes.POINT()
+                        _user.GetCursorPos(ctypes.byref(px))
+                        cx, cy = px.x, px.y
                 except Exception:
                     cx, cy = 0, 0
                 ch = 0
+            testhooks.emit("caret", rect=list(rect) if rect else None,
+                           source=("override" if self.anchor_override else
+                                   getattr(caret_mod, "LAST", {}).get("source")))
+            if IS_MAC:
+                self._mac_screen_at(cx, cy)
             self._work = self.work_override or caret_mod.work_area(cx, cy)
             dpi = caret_mod.dpi_for_point(cx, cy)
             self._set_scale(self._forced_scale or dpi / 96.0)
@@ -654,7 +672,7 @@ class LivePanel:
             return
         self.set_style(name)
         try:
-            fg = _user.GetForegroundWindow()
+            fg = caret_mod.foreground() if IS_MAC else _user.GetForegroundWindow()
         except Exception:
             fg = None
         self.open(fg)
@@ -1346,8 +1364,25 @@ class LivePanel:
         return (wl + wr) // 2 - cw // 2 - self.margin, wb - ch - int(self._px(56)) - self.margin
 
     # ---------------------------------------------------------- finestra
+    def _mac_screen_at(self, x, y):
+        """macOS: gli schermi e quello che contiene il punto (px) su cui si pianifica la card.
+        Il pannello converte posizione e misura con la scala di QUESTO schermo (mac_geom)."""
+        try:
+            import mac_ax
+            import mac_geom
+            self._mac_screens = mac_ax.screens()
+            self._mac_idx = mac_geom.screen_for_px(x, y, self._mac_screens, mac_ax.LAST.get("screen"))
+        except Exception as e:
+            self.log(f"   [panel] schermi: {e}")
+            self._mac_screens, self._mac_idx = [], None
+
     def _ensure_window(self):
         if self.hwnd:
+            return
+        if IS_MAC:
+            import mac_panel
+            self.hwnd = mac_panel.MacPanel(log=self.log)
+            self._shown = False
             return
         import win32gui
         import win32con
@@ -1373,6 +1408,11 @@ class LivePanel:
         self._shown = False
 
     def _show(self, v):
+        if IS_MAC:
+            if self.hwnd is not None:
+                self.hwnd.show(v)
+                self._shown = self.hwnd.shown
+            return
         import win32gui
         import win32con
         if v and not self._shown:
@@ -1399,6 +1439,7 @@ class LivePanel:
                 img, x, y = r
                 self._paint(x, y, img)
                 self._show(True)
+                testhooks.card(x, y, img.size[0], img.size[1], self.mode)
                 self.last_frame_ms = (time.perf_counter() - t0) * 1000
                 if self.last_frame_ms < 9.0:
                     self._prewarm(33.0 - self.last_frame_ms)
@@ -1409,7 +1450,11 @@ class LivePanel:
 
     def _paint(self, x, y, img):
         """UpdateLayeredWindow: alpha per-pixel vero, come paint_layered in wavetype.py.
-        Sposta e ridimensiona la finestra nello stesso colpo."""
+        Sposta e ridimensiona la finestra nello stesso colpo. Su macOS: NSPanel (mac_panel)."""
+        if IS_MAC:
+            self._ensure_window()
+            self.hwnd.paint(x, y, img, getattr(self, "_mac_screens", []), getattr(self, "_mac_idx", None))
+            return
         w, h = img.size
         # BGRA premoltiplicato direttamente dall'impacchettatore di Pillow ("BGRa"): 1,9 ms
         # contro 12 ms della stessa conversione in numpy (misurato su 836x286, 19/09)
@@ -1448,7 +1493,9 @@ class LivePanel:
 
     def destroy(self):
         try:
-            if self.hwnd:
+            if self.hwnd and IS_MAC:
+                self.hwnd.destroy()
+            elif self.hwnd:
                 import win32gui
                 win32gui.DestroyWindow(self.hwnd)
         except Exception:
