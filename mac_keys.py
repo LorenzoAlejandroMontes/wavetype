@@ -19,6 +19,7 @@ Qui sopra (KeyState, Hybrid, vk_down) e' logica pura, provata anche su Windows
 import os
 import threading
 import time
+from collections import deque
 
 # ---- codici tasto macOS (kVK_*, posizioni fisiche ANSI) ----
 KC_ESC = 53
@@ -68,7 +69,11 @@ class KeyState:
 
     other = un tasto qualunque premuto mentre il chord e' giu' (Fn+Canc, Fn+frecce,
     Ctrl+Option+frecce): allora Fn era un modificatore, non una dettatura. Si azzera a ogni
-    nuova pressione del chord."""
+    nuova pressione del chord.
+
+    cmds = Q/R/T premuti con Ctrl+Option, ed ESC, in coda finche' il worker li prende (take_cmd).
+    Il worker li guardava "giu' adesso": mentre apre la registrazione e' fermo, e un tocco piu'
+    breve di quel tempo si perdeva (run #2 della CI Mac: Ctrl+Option+Q non chiudeva l'app)."""
 
     def __init__(self):
         self.keys = set()
@@ -78,6 +83,7 @@ class KeyState:
         self.other = False
         self.swallow = {}        # keycode -> callback(keycode); keyDown e keyUp non arrivano all'app
         self.chord_letters = (KC_Q, KC_R, KC_T)
+        self.cmds = deque(maxlen=16)    # append/popleft atomici: due thread senza lock
 
     def _set(self, fl, fn, now):
         """Nuovi modificatori. L'ordine conta (un altro thread legge senza lock): prima `other`,
@@ -98,6 +104,9 @@ class KeyState:
             return False
         if kind == T_KEYDOWN:
             self.keys.add(kc)
+            if not autorepeat and (kc == KC_ESC or (kc in self.chord_letters
+                                                    and self.ctrl_option())):
+                self.cmds.append(kc)
             if not autorepeat and self.edge[0] and kc != KC_ESC and kc not in self.swallow \
                     and not (kc in self.chord_letters and self.ctrl_option()):
                 self.other = True
@@ -119,11 +128,19 @@ class KeyState:
     def down(self, kc):
         return kc in self.keys
 
+    def take_cmd(self):
+        """Il prossimo ESC o Q/R/T premuto con Ctrl+Option (keycode), o None. Una volta sola."""
+        try:
+            return self.cmds.popleft()
+        except IndexError:
+            return None
+
     def resync(self, flags, fn, now=None):
         """Il tap e' stato spento da macOS: gli eventi di quel tempo sono persi. Tasti svuotati
         (un keyUp perso lascerebbe Q "giu'" per sempre: Ctrl+Option chiuderebbe l'app) e
         modificatori riletti dal sistema."""
         self.keys = set()
+        self.cmds.clear()
         self._set(int(flags), bool(fn), now)
 
     def fn(self):
@@ -223,6 +240,10 @@ def chord_edge():
 
 def down(kc):
     return STATE.down(kc)
+
+
+def take_cmd():
+    return STATE.take_cmd()
 
 
 def set_swallow(mapping):

@@ -80,7 +80,9 @@ SHOTS = os.path.join(RES, "shots")
 def shot(name):
     """Full-screen capture, shrunk to 1600 px and saved as JPEG (small enough for git)."""
     os.makedirs(SHOTS, exist_ok=True)
-    tmp = os.path.join(SHOTS, f".{name}.png")
+    # screencapture refuses names starting with a dot and still exits 0 (run 2: 0 shots,
+    # "cannot write file to intended destination"; Apple Developer Forums thread 106976)
+    tmp = os.path.join(SHOTS, f"tmp_{name}.png")
     out = os.path.join(SHOTS, f"{name}.jpg")
     rc, msg = run(["screencapture", "-x", tmp], 20)
     if rc != 0 or not os.path.exists(tmp):

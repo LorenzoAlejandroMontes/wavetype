@@ -124,6 +124,22 @@ def test_lettere_del_chord_ingoiate_solo_con_ctrl_option():
     assert s.down(K.KC_R), "ingoiata ma vista dal worker"
 
 
+def test_comandi_in_coda_anche_se_gia_rilasciati():
+    s = K.KeyState()
+    s.handle(K.T_KEYDOWN, K.KC_Q, 0)                      # Q da sola: testo, non comando
+    s.handle(K.T_KEYUP, K.KC_Q, 0)
+    eq(s.take_cmd(), None)
+    s.handle(K.T_FLAGS, 58, K.F_CTRL | K.F_OPT)
+    s.handle(K.T_KEYDOWN, K.KC_Q, K.F_CTRL | K.F_OPT)
+    s.handle(K.T_KEYDOWN, K.KC_Q, K.F_CTRL | K.F_OPT, autorepeat=True)
+    s.handle(K.T_KEYUP, K.KC_Q, K.F_CTRL | K.F_OPT)       # gia' su quando il worker guarda
+    eq(s.take_cmd(), K.KC_Q, "il tocco breve resta in coda")
+    eq(s.take_cmd(), None, "una volta sola, la ripetizione non conta")
+    s.handle(K.T_KEYDOWN, K.KC_T, K.F_CTRL | K.F_OPT)
+    s.resync(0, False)
+    eq(s.take_cmd(), None, "tap spento e riacceso: coda svuotata")
+
+
 def test_tasti_1_3_ingoiati_e_richiamati_una_volta():
     s = K.KeyState()
     got = []
@@ -596,10 +612,40 @@ S.handle(K.T_KEYUP, 117, K.F_FN); time.sleep(0.05)
 out["fn_del_rec"] = W.rec["held"]
 fn(False, 0.15)
 out["fn_del"] = [c if isinstance(c, str) else c[2] for c in calls if c != ("ev", "hotkey", "start")]
-# 7) Ctrl+Option+Q: esce
+del calls[:]
+# 7) R di 30 ms mentre la registrazione si apre (0,3 s): recupero, niente ascolto rimasto aperto
+slow[0] = 0.3
+S.handle(K.T_FLAGS, 58, K.F_CTRL | K.F_OPT); time.sleep(0.05)
+S.handle(K.T_KEYDOWN, K.KC_R, K.F_CTRL | K.F_OPT); time.sleep(0.03)
+S.handle(K.T_KEYUP, K.KC_R, K.F_CTRL | K.F_OPT); time.sleep(0.05)
+S.handle(K.T_FLAGS, 58, 0); time.sleep(0.6)
+out["fast_r_rec"] = W.rec["held"]
+out["fast_r"] = [c for c in calls if isinstance(c, str)]
+del calls[:]
+# 8) ESC di 30 ms mentre la registrazione si apre: annullata
+fn(True, 0.05)
+S.handle(K.T_KEYDOWN, K.KC_ESC, K.F_FN); time.sleep(0.03)
+S.handle(K.T_KEYUP, K.KC_ESC, K.F_FN); time.sleep(0.05)
+fn(False, 0.6)
+out["fast_esc_rec"] = W.rec["held"]
+del calls[:]
+# 9) Ctrl+Option e R nello stesso giro del worker: recupero, nessuna dettatura al giro dopo
+slow[0] = 0.0
 S.handle(K.T_FLAGS, 58, K.F_CTRL | K.F_OPT)
-S.handle(K.T_KEYDOWN, K.KC_Q, K.F_CTRL | K.F_OPT); time.sleep(0.15)
+S.handle(K.T_KEYDOWN, K.KC_R, K.F_CTRL | K.F_OPT); time.sleep(0.15)
+S.handle(K.T_KEYUP, K.KC_R, K.F_CTRL | K.F_OPT)
+S.handle(K.T_FLAGS, 58, 0); time.sleep(0.15)
+out["same_tick_r_rec"] = W.rec["held"]
+out["same_tick_r"] = [c for c in calls if isinstance(c, str)]
+del calls[:]
+# 10) Ctrl+Option+Q di 30 ms mentre la registrazione si apre: esce (run #2 della CI: restava su)
+slow[0] = 0.3
+S.handle(K.T_FLAGS, 58, K.F_CTRL | K.F_OPT); time.sleep(0.05)
+S.handle(K.T_KEYDOWN, K.KC_Q, K.F_CTRL | K.F_OPT); time.sleep(0.03)
+S.handle(K.T_KEYUP, K.KC_Q, K.F_CTRL | K.F_OPT); time.sleep(0.05)
+S.handle(K.T_FLAGS, 58, 0); time.sleep(0.6)
 out["quit"] = W.flags["quit"]
+out["quit_calls"] = [c for c in calls if isinstance(c, str)]
 th.join(1.0)
 out["alive"] = th.is_alive()
 print("PROBE " + json.dumps(out))
@@ -623,7 +669,14 @@ def test_worker_mac_vero_in_darwin():
     eq(out["slow"], ["start", "stop"], "avvio lento, tocco, tocco")
     eq(out["fn_del_rec"], False, "Fn+Canc annulla")
     eq(out["fn_del"], ["start", "cancel"], "Fn+Canc poi rilascio di Fn: nessuno stop in piu'")
-    eq((out["quit"], out["alive"]), (True, False), "Ctrl+Option+Q esce")
+    eq(out["fast_r_rec"], False, "R breve durante l'avvio: niente ascolto rimasto aperto")
+    eq(out["fast_r"], ["start", "recover", "stop"], "R breve durante l'avvio: recupero")
+    eq(out["fast_esc_rec"], False, "ESC breve durante l'avvio annulla")
+    eq(out["same_tick_r_rec"], False, "Ctrl+Option+R nello stesso giro: niente dettatura")
+    eq(out["same_tick_r"] in (["recover"], ["start", "recover", "stop"]), True,
+       f"Ctrl+Option+R nello stesso giro: {out['same_tick_r']}")
+    eq(out["quit_calls"], ["start"], "Q arrivata mentre l'avvio era in corso")
+    eq((out["quit"], out["alive"]), (True, False), "Ctrl+Option+Q breve durante l'avvio esce")
 
 
 def main():

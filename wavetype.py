@@ -1929,24 +1929,20 @@ def worker_mac():
     Fn e Ctrl+Option sono ibridi (mac_keys.Hybrid): tocco = toggle come Win+Ctrl, tenuto
     premuto oltre HOLD_SEC = parli finche' tieni. ESC, tasti 1-3, promemoria: come su Windows."""
     hy = mac_keys.Hybrid(mac_keys.HOLD_SEC)
-    esc_prev = r_prev = t_prev = False
     while not flags["quit"]:
-        co = mac_keys.STATE.ctrl_option()
-        if co and _down(VK_Q):          # Ctrl+Option+Q -> esci del tutto
+        cmd = mac_keys.take_cmd()       # dalla coda del tap: anche se premuto mentre si avviava
+        if cmd == mac_keys.KC_Q:        # Ctrl+Option+Q -> esci del tutto
             flags["quit"] = True
             break
-        r = co and _down(VK_R)          # Ctrl+Option+R -> rielabora l'ultima registrazione
-        t = co and _down(VK_T)          # Ctrl+Option+T -> stile della card
-        if (r and not r_prev) or (t and not t_prev):
-            if r and not r_prev:
+        if cmd in (mac_keys.KC_R, mac_keys.KC_T):
+            if cmd == mac_keys.KC_R:    # Ctrl+Option+R -> rielabora l'ultima registrazione
                 chord_recover()
-            else:
+            else:                       # Ctrl+Option+T -> stile della card
                 chord_style()
-            hy.reset()                  # il rilascio di questi tasti non e' un toggle
-            r_prev, t_prev = r, t
-            time.sleep(0.02)
+            hy.feed(*mac_keys.chord_edge())     # chord e lettera nello stesso giro: la pressione
+            hy.reset()                  # va vista, se no il reset non la copre e al giro dopo
+            time.sleep(0.02)            # partirebbe una dettatura. Il rilascio non e' un toggle
             continue
-        r_prev, t_prev = r, t
         if hy.state == "pressed" and mac_keys.STATE.other:
             # Fn+Canc, Fn+frecce, Ctrl+Option+frecce: il chord era un modificatore, non una
             # dettatura. Come per R/T: la registrazione appena aperta si annulla.
@@ -1970,8 +1966,7 @@ def worker_mac():
             rec["remind"] += 1
             log(f"   [rec] registrazione ancora attiva da {mins} min")
             threading.Thread(target=lambda: (beep(880, 70), beep(660, 70)), daemon=True).start()
-        esc = _down(0x1B)               # ESC -> annulla la dettatura in corso (qualunque fase)
-        if esc and not esc_prev:
+        if cmd == mac_keys.KC_ESC:      # ESC -> annulla la dettatura in corso (qualunque fase)
             st = ui["state"]
             if st in ("rec", "proc"):
                 testhooks.emit("hotkey", what="cancel")
@@ -1992,7 +1987,6 @@ def worker_mac():
                 log("   [ESC] elaborazione annullata")
             flags["dismiss"] = True
             hy.reset()
-        esc_prev = esc
         ev = hy.feed(*mac_keys.chord_edge())     # istante vero del tasto, non di questo giro
         if ev == "start" and not rec["held"]:
             testhooks.emit("hotkey", what="start")
