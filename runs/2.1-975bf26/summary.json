@@ -1,0 +1,167 @@
+{
+  "run": {
+    "GITHUB_RUN_NUMBER": "2",
+    "GITHUB_RUN_ID": "37033092991",
+    "GITHUB_SHA": "975bf267a4aab5f4980345463f01d26938676676",
+    "GITHUB_REF_NAME": "macos",
+    "RUNNER_OS": "macOS",
+    "RUNNER_ARCH": "ARM64"
+  },
+  "all_ok": false,
+  "checks": {
+    "built": {
+      "pass": true,
+      "detail": "dist/Wavetype.app/Contents/MacOS/Wavetype"
+    },
+    "dmg": {
+      "pass": true
+    },
+    "launched": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true
+      }
+    },
+    "ready": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true
+      }
+    },
+    "tap_ok": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true
+      }
+    },
+    "rec_start": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true
+      }
+    },
+    "card_shown": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true
+      }
+    },
+    "transcript": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true
+      }
+    },
+    "pasted_text_matches": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true
+      },
+      "word_ratio": {
+        "s1_ctrl_option": 0.929,
+        "s2_fn": 0.929,
+        "s3_context": 0.929
+      },
+      "min": 0.6
+    },
+    "first_run_screenshots": {
+      "pass": false,
+      "by_page": {
+        "permissions": false,
+        "key": false
+      },
+      "rule": "screenshot taken, app alive after 10 s, no error event"
+    }
+  },
+  "tests_ok": true,
+  "tests": {
+    "test_mac_layer": {
+      "ok": true,
+      "line": "31/31 ok",
+      "exit": 0
+    },
+    "test_context": {
+      "ok": true,
+      "line": "10/10 ok",
+      "exit": 0
+    },
+    "test_live_engine": {
+      "ok": true,
+      "line": "23/23 ok",
+      "exit": 0
+    },
+    "test_live_dual": {
+      "ok": true,
+      "line": "26/26 ok",
+      "exit": 0
+    },
+    "test_live_local": {
+      "ok": true,
+      "line": "17/17 ok",
+      "exit": 0
+    }
+  },
+  "scenarios_brief": {
+    "s1_ctrl_option": {
+      "ready_after_s": 14.4,
+      "frontmost_before": "TextEdit",
+      "textedit_text": "Hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?",
+      "word_ratio": 0.929,
+      "error": null,
+      "stop": {
+        "how": "quit hotkey",
+        "exit_code": 0
+      },
+      "initial_text_kept": null
+    },
+    "s2_fn": {
+      "ready_after_s": 2.9,
+      "frontmost_before": "TextEdit",
+      "textedit_text": "Hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?",
+      "word_ratio": 0.929,
+      "error": null,
+      "stop": {
+        "how": "quit hotkey",
+        "exit_code": 0
+      },
+      "initial_text_kept": null
+    },
+    "s3_context": {
+      "ready_after_s": 0.6,
+      "frontmost_before": "TextEdit",
+      "textedit_text": "I think hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?",
+      "word_ratio": 0.929,
+      "error": null,
+      "stop": {
+        "how": "SIGTERM",
+        "exit_code": 1
+      },
+      "initial_text_kept": true
+    }
+  },
+  "driver_preflight": {
+    "CGPreflightPostEventAccess": true,
+    "CGPreflightListenEventAccess": true,
+    "CGPreflightScreenCaptureAccess": true,
+    "AXIsProcessTrusted": true
+  },
+  "e2e_error": null,
+  "logs_found": [
+    "~/Library/Application Support/Wavetype/wavetype.log",
+    "~/Library/Application Support/Wavetype/crash.log"
+  ]
+}
