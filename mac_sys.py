@@ -66,7 +66,8 @@ def get_clipboard_text():
 def set_clipboard_text(text, transient=False):
     pb = _pb()
     pb.clearContents()
-    pb.setString_forType_(text, STRING)
+    if not pb.setString_forType_(text, STRING):     # False senza sollevare: chi chiama lo sa
+        raise RuntimeError("NSPasteboard non ha preso il testo")
     if transient:
         pb.setString_forType_("", TRANSIENT)
     return int(pb.changeCount())
@@ -212,7 +213,8 @@ FRONT_POLL = 0.02
 ACTIVATED_WAIT = 0.25
 UNKNOWN = "unknown"      # activate(): non si sa chi e' davanti (pid 0, AppKit e AX muti)
 ACTIVATED = "activated"  # activate(): non era davanti, ce l'abbiamo riportata (e confermato)
-PASTE = {"why": ""}      # perche' l'ultimo insert_text non ha incollato (log, testhooks)
+PASTE = {"why": "", "clip": False}   # perche' l'ultimo insert_text non ha incollato (log,
+# testhooks) e se il testo e' rimasto negli appunti (la card dice "copied" solo se e' vero)
 
 
 def _ax_front_pid():
@@ -300,6 +302,7 @@ def insert_text(pid, text):
     """Incolla `text` nell'app `pid` (spec mac). Non solleva. False = non incollato, il perche'
     in PASTE["why"]."""
     PASTE["why"] = ""
+    PASTE["clip"] = False
     act = activate(pid)
     if act is None or act is False:
         # None: app bersaglio chiusa durante la formattazione. False: non e' tornata davanti
@@ -308,11 +311,13 @@ def insert_text(pid, text):
         # resta negli appunti (senza TransientType e senza ripristino), da incollare a mano.
         try:
             set_clipboard_text(text)
+            PASTE["clip"] = True
         except Exception:
             pass
         PASTE["why"] = (f"app {pid} chiusa" if act is None else
                         f"app {pid} non e' tornata davanti entro {FRONT_WAIT:.1f} s")
-        log(f"   [mac] {PASTE['why']}: niente incolla, testo lasciato negli appunti")
+        log(f"   [mac] {PASTE['why']}: niente incolla, " +
+            ("testo lasciato negli appunti" if PASTE["clip"] else "appunti non scritti"))
         return False
     # App riportata davanti da noi: il Cmd+V puo' perdersi durante il cambio (finestra non
     # ancora col focus). Allora gli appunti di prima NON tornano e il testo resta negli appunti
@@ -325,6 +330,7 @@ def insert_text(pid, text):
         PASTE["why"] = f"appunti non scritti: {e}"
         log(f"   [mac] {PASTE['why']}")
         return False
+    PASTE["clip"] = True
     if moved:
         log(f"   [mac] app {pid} riportata davanti: attendo {ACTIVATED_WAIT:.2f} s in piu', "
             "appunti di prima non ripristinati")

@@ -20,7 +20,7 @@ Come si usa (tutto dal thread principale, come l'HUD):
     p.open(target_hwnd)          # trova il caret e si piazza, fase "listening"
     p.set_level(x)               # livello voce 0..1, a ogni blocco o a ogni giro del loop
     p.update(engine.snapshot())  # {"committed":..., "tentative":..., "rev":...}; prima parola -> "live"
-    p.set_phase("paused" | "formatting" | "inserted" | "cancelled" | "offline" | "live")
+    p.set_phase("paused" | "formatting" | "inserted" | "cancelled" | "offline" | "live" | "copied")
     p.tick()                     # un frame: anima + disegna. True finche' e' vivo.
     p.close(pasted=True)         # uscita animata (inserted/cancelled si chiudono da soli)
     p.preview_style("glyph")     # anteprima di 1,6 s sopra il cursore (tasto che cambia stile)
@@ -85,7 +85,7 @@ STYLE_FILE = paths.config("card_style.txt", ROOT)
 PHASES = cs.PHASES
 # Edit Mode: le fasi che accetta set_phase() quando la card e' aperta con open_edit().
 # Dentro diventano "e_<fase>" (cs.EDIT_MODES) cosi' non incrociano mai quelle della dettatura.
-EDIT_PHASES = ("listening", "rewriting", "done", "cancelled", "offline", "nothing")
+EDIT_PHASES = ("listening", "rewriting", "done", "cancelled", "offline", "nothing", "copied")
 CHIPS = ec.CHIPS
 
 
@@ -137,6 +137,9 @@ T_RECOVERED = 1.4         # recupero incollato: le parole si vedono solo qui, re
 #                           (come wavetype.LIVE_RECOVERED_HOLD). Senza questo la card non si chiude:
 #                           close() in un esito e' ignorata apposta (visto nell'e2e del 20/09)
 T_CANCELLED = 1.2         # la card "Cancelled" resta, poi si chiude da sola
+T_COPIED = 4.0            # incolla saltato, testo negli appunti: qui c'e' da leggere il pie' E da
+#                           tornare nell'app e incollare. "offline" e il recupero a vuoto, dove
+#                           si legge soltanto, restano 2,5 s. Uguale a wavetype.LIVE_COPIED_HOLD
 T_GHOST = 0.18            # la card piena si ritira verso il cursore mentre compare la pillola
 T_PREVIEW = 1.6           # anteprima dello stile
 LV_DT = 0.07              # un campione di livello voce ogni 70 ms (storia che scorre)
@@ -534,7 +537,7 @@ class LivePanel:
         una close() che arriva in quel momento non la taglia."""
         if self.phase in ("closed", "closing"):
             return
-        if self.mode in ("inserted", "recovered", "cancelled"):
+        if self.mode in ("inserted", "recovered", "cancelled", "copied", "e_copied"):
             return
         self._pasted = pasted
         self.phase = "closing"
@@ -560,7 +563,7 @@ class LivePanel:
             return
         now = self.clock()
         if phase in ("formatting", "inserted", "cancelled", "recovering", "recovered",
-                     "no_audio", "unrecovered"):
+                     "no_audio", "unrecovered", "copied", "unpasted"):
             if self._t_freeze is None:
                 self._t_freeze = now
         elif phase in ("listening", "live", "paused", "offline"):
@@ -572,7 +575,7 @@ class LivePanel:
             self._pill_at = self._caret_after_paste()
             if not self._n_words:
                 self._n_words = sum(1 for w in self.words if w.state == "live")
-        if phase in ("inserted", "recovered", "cancelled") and self.phase == "closing":
+        if phase in ("inserted", "recovered", "cancelled", "copied") and self.phase == "closing":
             self.phase = "live"                  # una close() arrivata prima: la fase vince
         self.mode = phase
         self._t_mode = now
@@ -597,14 +600,14 @@ class LivePanel:
         if self.phase == "closed" or mode == self.mode:
             return
         now = self.clock()
-        if mode in ("e_rewriting", "e_done", "e_cancelled") and self._t_freeze is None:
+        if mode in ("e_rewriting", "e_done", "e_cancelled", "e_copied") and self._t_freeze is None:
             self._t_freeze = now
         if mode == "e_rewriting":
             self._t_fmt = now
         if mode == "e_done":
             self._ghost = self._last
             self._pill_at = self._caret_after_paste()
-        if mode in ("e_done", "e_cancelled") and self.phase == "closing":
+        if mode in ("e_done", "e_cancelled", "e_copied") and self.phase == "closing":
             self.phase = "live"            # una close() arrivata prima: l'esito vince
         self.mode = mode
         self._t_mode = now
@@ -822,6 +825,10 @@ class LivePanel:
                 self._t_phase = now
             elif self.mode == "cancelled" and now - self._t_mode >= T_CANCELLED:
                 self._pasted = False
+                self.phase = "closing"
+                self._t_phase = now
+            elif self.mode in ("copied", "e_copied") and now - self._t_mode >= T_COPIED:
+                self._pasted = False             # niente e' andato al cursore: si dissolve
                 self.phase = "closing"
                 self._t_phase = now
 

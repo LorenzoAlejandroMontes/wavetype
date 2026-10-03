@@ -239,6 +239,10 @@ LIVE_RECOVERED_HOLD = 1.4     # recupero incollato: le parole compaiono tutte in
 #                               di una dettatura (0,9 s) prima di chiudersi
 LIVE_RECOVER_HOLD = 2.5       # recupero a vuoto (niente in archivio, testo non tornato): la card
 #                               resta abbastanza da leggere cosa fare
+LIVE_COPIED_HOLD = 4.0        # incolla saltato (Mac: app di destinazione chiusa o non tornata
+#                               davanti), testo negli appunti: la card resta piu' di "offline"
+#                               (2,5 s) perche' qui oltre a leggere c'e' da tornare nell'app e
+#                               incollare. Uguale a live_panel.T_COPIED
 EDIT_DONE_HOLD = 1.2          # Edit incollato: la pillola ("GRAMMAR FIXED") resta tanto, poi va
 EDIT_NOTHING_HOLD = 2.5       # comando Edit detto senza selezione: "nothing selected" da leggere
 LIVE_PAUSE_SEC = 3.0          # tanto silenzio (niente voce e niente parole nuove) -> "paused"
@@ -617,13 +621,28 @@ def live_show_final(text):
         live["cmds"].append(("final", text))
 
 
-def live_pasted():
+def live_pasted(ok=True):
     """Incolla avvenuto (loop principale): la card passa a "inserted" (il conteggio parole lo
     ricava lei dal testo finale gia' ricevuto), resta LIVE_FINAL_HOLD e poi si chiude.
     Se intanto e' partita un'altra dettatura, il pannello a schermo e' SUO e non si tocca:
     l'incolla che sta passando e' di quella prima (misurato: senza questo il pannello della
-    nuova dettatura si chiudeva mentre l'utente stava ancora parlando)."""
+    nuova dettatura si chiudeva mentre l'utente stava ancora parlando).
+    `ok` e' l'esito di insert_text: None (ne' incollato ne' negli appunti) porta a "unpasted"
+    ("Audio kept", tasto del recupero; in Edit "offline": selezione rimasta com'era); solo un False esplicito (incolla saltato, testo negli
+    appunti) porta la card a "copied" al posto di "inserted", "recovered" o del "done" di Edit:
+    resta LIVE_COPIED_HOLD con il tasto dell'incolla nel pie', poi si dissolve."""
     if live["open"] and not rec["held"]:
+        if ok is None:                  # ne' incollato ne' negli appunti: resta l'audio in archivio
+            if live["edit"]:            # Edit: il testo scelto e' rimasto com'era
+                live_end("offline", LIVE_OFFLINE_HOLD)
+            else:
+                live_end("unpasted", LIVE_RECOVER_HOLD)
+            return
+        if ok is False:
+            live_phase("copied")
+            live["close_pasted"] = False
+            live["close_at"] = time.perf_counter() + LIVE_COPIED_HOLD
+            return
         if live["edit"]:                # Edit: la card e' gia' in "done" con la pillola del chip
             live["close_pasted"] = True
             live["close_at"] = time.perf_counter() + EDIT_DONE_HOLD
@@ -1364,13 +1383,17 @@ def set_clipboard_text(text):
 
 
 def insert_text(hwnd, text):
+    """Incolla `text` nella finestra `hwnd`. Torna True = incollato, False = incolla saltato e
+    testo lasciato negli appunti (solo Mac: la card lo dice, live_pasted), None = incolla saltato
+    e appunti non scritti (solo Mac: resta l'audio in archivio). Su Windows sempre True."""
     if IS_MAC:                        # NSPasteboard + Cmd+V, appunti di prima ripristinati (mac_sys)
         if mac_sys.insert_text(hwnd, text):
             testhooks.emit("pasted", chars=len(text), text=text[:200])
-        else:                         # app chiusa o non tornata davanti: testo negli appunti
-            testhooks.emit("error", where="paste",
-                           msg=(mac_sys.PASTE.get("why") or "incolla non riuscito")[:200])
-        return
+            return True
+        # app chiusa o non tornata davanti: testo negli appunti (se si sono lasciati scrivere)
+        testhooks.emit("error", where="paste",
+                       msg=(mac_sys.PASTE.get("why") or "incolla non riuscito")[:200])
+        return False if mac_sys.PASTE.get("clip") else None
     saved = get_clipboard_text()
     try:
         win32gui.SetForegroundWindow(hwnd)
@@ -1387,6 +1410,7 @@ def insert_text(hwnd, text):
         except Exception:
             pass
     testhooks.emit("pasted", chars=len(text), text=text[:200])
+    return True
 
 
 def read_context(hwnd, token):
@@ -2417,8 +2441,7 @@ def build_ui():
         a["k"] = (LOOP_LIVE / LOOP_IDLE) if live_panel_open() else 1.0
         while insert_jobs:
             h, t = insert_jobs.pop(0)
-            insert_text(h, t)
-            live_pasted()          # il pannello si chiude qui, subito dopo l'incolla
+            live_pasted(insert_text(h, t))   # il pannello si chiude qui, subito dopo l'incolla
         active = ui["state"] in ("rec", "proc")
         now = time.perf_counter()
         if active:
@@ -2729,8 +2752,7 @@ def build_ui_mac(smoke=False):
         try:
             while insert_jobs:
                 h, t = insert_jobs.pop(0)
-                insert_text(h, t)
-                live_pasted()          # il pannello si chiude qui, subito dopo l'incolla
+                live_pasted(insert_text(h, t))   # il pannello si chiude qui, o va in "copied"
             live_tick()
             report_tap()
             keycodes()

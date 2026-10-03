@@ -338,6 +338,17 @@ def test_incolla_saltato_se_app_non_torna_davanti():
          mac_sys.snapshot_clipboard) = real
     eq((sent, clip, snaps), ([], [("ciao", False)], []), "niente Cmd+V, niente ripristino")
     assert "davanti" in mac_sys.PASTE["why"], mac_sys.PASTE["why"]
+    eq(mac_sys.PASTE["clip"], True, "testo negli appunti: la card puo' dire copied")
+
+    def rotto(text, transient=False):
+        raise RuntimeError("appunti chiusi")
+    real2 = (mac_sys.set_clipboard_text, mac_sys.activate, mac_sys.log)
+    mac_sys.set_clipboard_text, mac_sys.activate, mac_sys.log = rotto, (lambda pid: False), (lambda m: None)
+    try:
+        eq(mac_sys.insert_text(4242, "ciao"), False)
+    finally:
+        mac_sys.set_clipboard_text, mac_sys.activate, mac_sys.log = real2
+    eq(mac_sys.PASTE["clip"], False, "appunti non scritti: niente copied")
 
 
 def test_activate_ricontrolla_chi_e_davanti():
@@ -547,16 +558,63 @@ def _with_fake_ax(cost, fn):
         mac_ax.screens, mac_ax.frontmost_pid, mac_ax._LOG[0] = saved[2:]
 
 
+class _FakeASClock(_FakeAS):
+    """Come _FakeAS, ma il tempo e' finto: una chiamata non dorme, sposta avanti `clock[0]` di
+    quanto sarebbe durata (il suo costo, o il timeout dell'elemento se e' piu' corto)."""
+
+    def __init__(self, cost, clock):
+        _FakeAS.__init__(self, cost)
+        self.clock = clock
+
+    def _wait(self, el):
+        self.n += 1
+        self.clock[0] += min(self.cost, el.timeout)
+        return self.cost <= el.timeout
+
+
+def _caret_con_orologio_finto(cost, budget):
+    """get_caret_rect_verbose con AX finto e orologio finto: mac_ax legge l'ora solo da
+    `time.perf_counter`, e qui il nome `time` DENTRO mac_ax punta a un orologio che avanza solo
+    quando una chiamata AX "costa". Niente sleep veri: il risultato non dipende dalla macchina
+    (con l'orologio vero: 0,255 s sul runner Mac del run #7 e 0,369 s su Windows una volta su
+    cinque, contro un limite di 0,21). Torna (rect, src, secondi finti passati, AX finto)."""
+    clock = [1000.0]                    # 1000 e i costi in potenze di due: somme esatte in binario
+
+    def go(m):
+        real_time, real_mod = m.time, m._ax["mod"]
+        fake = _FakeASClock(cost, clock)
+        m.time = types.SimpleNamespace(perf_counter=lambda: clock[0])
+        m._ax["mod"] = fake
+        try:
+            rect, src, _ms = m.get_caret_rect_verbose(4242, budget)
+        finally:
+            m.time, m._ax["mod"] = real_time, real_mod
+        return rect, src, fake
+
+    (rect, src, fake), _unused = _with_fake_ax(cost, go)
+    return rect, src, clock[0] - 1000.0, fake
+
+
 def test_caret_ax_una_scadenza_per_tutta_la_catena():
-    """App lenta (0,1 s a chiamata, ognuna sotto il suo timeout): prima ogni chiamata aveva i
-    suoi 0,15 s e il loop di Tk restava fermo ~0,4 s; ora la catena intera sta nel budget."""
-    t0 = time.perf_counter()
-    (rect, src, _ms), fake = _with_fake_ax(0.10, lambda m: m.get_caret_rect_verbose(4242, 0.15))
-    took = time.perf_counter() - t0
+    """App lenta (ogni chiamata sotto il timeout pieno): prima ogni chiamata aveva i suoi 0,15 s
+    e il loop di Tk restava fermo ~0,4 s; ora la catena intera sta nel budget. Tempo finto
+    (_caret_con_orologio_finto): si contano le chiamate e i timeout, non i millisecondi veri."""
+    budget = 0.1875
+    # 1) due terzi del budget a chiamata: la prima passa, la seconda ha come timeout solo il
+    #    tempo che resta, lo consuma e fallisce; li' la catena si ferma
+    rect, src, took, fake = _caret_con_orologio_finto(0.125, budget)
     eq((rect, src), (None, None), "budget sforato: card in basso al centro")
-    assert took < 0.15 + 0.06, f"catena durata {took:.3f} s"
-    assert fake.timeouts and all(0 < t <= 0.15 + 1e-9 for t in fake.timeouts), fake.timeouts
-    eq(fake.timeouts == sorted(fake.timeouts, reverse=True), True, "il tempo che resta, a scendere")
+    eq(fake.timeouts, [0.1875, 0.0625], "il budget intero, poi il tempo che resta")
+    eq(fake.n, 2, "manual + focus: a budget finito nessun'altra chiamata")
+    eq(took, budget, "la catena dura quanto il budget, non un timeout pieno per gradino")
+    # 2) un terzo a chiamata: tre chiamate riuscite consumano il budget esatto. La quarta (i
+    #    bounds) non parte e non arma nessun timeout: senza scadenza unica sarebbero sei, come
+    #    in test_caret_ax_veloce_arriva_al_carattere_prima
+    rect, src, took, fake = _caret_con_orologio_finto(0.0625, budget)
+    eq((rect, src), (None, None), "budget finito prima dei bounds")
+    eq(fake.timeouts, [0.1875, 0.125, 0.0625], "il tempo che resta, a scendere")
+    eq(fake.n, 3, "manual + focus + range, poi basta")
+    eq(took, budget, "mai oltre il budget")
 
 
 def test_caret_ax_veloce_arriva_al_carattere_prima():
@@ -819,6 +877,52 @@ def test_card_styles_su_darwin_tasti_e_font():
     eq((card_styles.K_CHORD, card_styles.K_RECOVER, card_styles.K_UNDO),
        ("fn", "Ctrl+Opt+R", "Cmd+Z") if sys.platform == "darwin"
        else ("Win+Ctrl", "Win+Ctrl+R", "Ctrl+Z"), "tornato com'era")
+
+
+def test_card_copied_su_darwin_ha_cmd_v():
+    """Incolla saltato: il pie' della card "copied" (e di Edit) porta il tasto dell'incolla del
+    Mac, nello stesso formato degli altri tasti (Cmd+Z, Ctrl+Opt+R)."""
+    def load():
+        import card_styles
+        importlib.reload(card_styles)
+        return (card_styles.K_PASTE, card_styles.R_FOOTERS["copied"],
+                card_styles.E_FOOTERS["e_copied"])
+    try:
+        got = _as_platform("darwin", False, load)
+    finally:
+        import card_styles
+        importlib.reload(card_styles)
+    eq(got, ("Cmd+V", ("On clipboard", "Cmd+V", "to paste"), ("On clipboard", "Cmd+V", "to paste")))
+    eq(card_styles.K_PASTE, "Cmd+V" if sys.platform == "darwin" else "Ctrl+V", "tornato com'era")
+
+
+def test_evento_card_porta_la_fase_copied():
+    """La CI legge le fasi dalle righe "card" (una per fase ogni CARD_EVERY): "copied" ci arriva
+    anche se le parole a schermo non cambiano. La riga "live" invece esce solo a testo cambiato."""
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "ev.jsonl")
+        old = os.environ.get(H.ENV_EVENTS)
+        os.environ[H.ENV_EVENTS] = p
+        saved = (dict(H._card_last), dict(H._live_last))
+        H._card_last.clear()
+        H._live_last.update(t=None, text=None)
+        try:
+            assert H.card(10, 20, 300, 80, "formatting", now=200.0)
+            assert H.card(10, 20, 300, 96, "copied", now=200.1)
+            assert H.live("Ciao mondo", "formatting", now=200.0)
+            assert not H.live("Ciao mondo", "copied", now=201.0)
+            assert H.live("Ciao mondo.", "copied", now=201.0)
+            rows = [json.loads(ln) for ln in open(p, encoding="utf-8")]
+        finally:
+            H._card_last.clear()
+            H._card_last.update(saved[0])
+            H._live_last.update(saved[1])
+            if old is None:
+                os.environ.pop(H.ENV_EVENTS, None)
+            else:
+                os.environ[H.ENV_EVENTS] = old
+    eq([(r["ev"], r["phase"]) for r in rows],
+       [("card", "formatting"), ("card", "copied"), ("live", "formatting"), ("live", "copied")])
 
 
 def test_moduli_mac_si_importano_senza_pyobjc():

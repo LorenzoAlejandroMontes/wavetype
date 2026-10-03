@@ -242,6 +242,47 @@ def frontmost():
     return out.strip() if rc == 0 else None
 
 
+def textedit_kill():
+    """Scenario s4: the target app goes away while the dictation is being processed. By signal,
+    not by a polite quit: `tell application "TextEdit" to quit` needs an Apple Events grant the
+    runner does not have (see above), and a Cmd+Q through System Events can stop on a "save
+    changes?" sheet that keeps the process alive. SIGTERM is what textedit_quit() already uses
+    between scenarios; SIGKILL if the process is still there after 3 s. Returns how it ended."""
+    r = {"t": time.time(), "gone": False, "how": None}
+    for sig, tries in (("-TERM", 12), ("-KILL", 12)):
+        run(["killall", sig, "TextEdit"])
+        for _ in range(tries):
+            if run(["pgrep", "-x", "TextEdit"])[0] != 0:
+                r.update(gone=True, how="SIG" + sig[1:], after_s=round(time.time() - r["t"], 2))
+                return r
+            time.sleep(0.25)
+    return r
+
+
+# ---------- clipboard ----------
+CLIP_MARK = "wavetype-ci-clipboard-before-s4"
+# pbcopy and pbpaste follow the locale (man pbpaste): in the C locale non-ASCII text is not UTF-8
+CLIP_ENV = dict(os.environ, LC_CTYPE="UTF-8")
+
+
+def clip_set(text):
+    try:
+        subprocess.run(["pbcopy"], input=text.encode("utf-8"), env=CLIP_ENV, timeout=10)
+        return True
+    except Exception as e:
+        say(f"pbcopy failed: {e}")
+        return False
+
+
+def clip_get():
+    try:
+        p = subprocess.run(["pbpaste"], capture_output=True, env=CLIP_ENV, timeout=10)
+        return p.stdout.decode("utf-8", errors="replace") if p.returncode == 0 else None
+    except Exception as e:
+        say(f"pbpaste failed: {e}")
+        return None
+
+
 # ---------- the app ----------
 def launch(tag, extra):
     ev_path = os.path.join(RES, f"events_{tag}.jsonl")
@@ -299,9 +340,66 @@ def match_ratio(text, sentence=SENTENCE):
     return round(len(hit) / len(want), 3) if want else 0.0
 
 
-def dictation(tag, key, initial=""):
-    """One dictation: start with `key`, ~8 s of the WAV, stop with `key`, read TextEdit."""
-    r = {"tag": tag, "key": key, "initial_text": initial}
+def paste_outcome(ev, timeout, proc, start):
+    """First event that closes a dictation: `pasted`, or `error` with where == "paste" (the paste
+    was skipped). None on timeout or if the app exits first."""
+    def hit():
+        for e in ev.since(start, "pasted", "error"):
+            if e.get("ev") == "pasted" or e.get("where") == "paste":
+                return e
+        return None
+
+    end = time.time() + timeout
+    while time.time() < end:
+        e = hit()
+        if e or proc.poll() is not None:
+            return e or hit()
+        time.sleep(0.1)
+    return None
+
+
+def copied_checks(r, ev, i0, kill, outcome, card, shot_path, t_shot):
+    """Scenario s4, what must be true when the target app closed before the paste: the app said
+    it skipped the paste, sent no Cmd+V, showed the `copied` card and left the text on the
+    clipboard. Fills r["copied"] (the details) and r["copied_card"] (the verdict)."""
+    clip = clip_get()
+    with open(os.path.join(RES, f"clipboard_{r['tag']}.txt"), "w", encoding="utf-8") as f:
+        f.write(clip if clip is not None else "<could not read the clipboard>")
+    paste_errors = [e for e in ev.since(i0, "error") if e.get("where") == "paste"]
+    pasted = ev.since(i0, "pasted")
+    ratio = match_ratio(clip)
+    t_kill = kill.get("t") or 0
+    c = {
+        "target_closed": bool(kill.get("gone")),
+        "target_closed_how": kill.get("how"),
+        # the order that makes the scenario mean something: closed first, outcome after
+        "closed_before_transcript": not [e for e in ev.since(i0, "transcript") if (e.get("t") or 0) < t_kill],
+        "closed_before_outcome": bool(outcome) and (outcome.get("t") or 0) > t_kill,
+        "paste_error": bool(paste_errors),
+        "paste_error_msg": paste_errors[0].get("msg") if paste_errors else None,
+        "no_pasted_event": not pasted,
+        "card_copied": bool(card),
+        "clipboard_text": clip,
+        "clipboard_word_ratio": ratio,
+        "clipboard_matches": ratio >= MATCH_MIN,
+        "clipboard_changed": clip is not None and clip != CLIP_MARK,
+        # the screenshot is evidence for the reader, not part of the verdict (as in s1-s3)
+        "shot": shot_path,
+        "shot_after_card_s": round(t_shot - card["t"], 2) if card and card.get("t") and t_shot else None,
+    }
+    r["copied"] = c
+    r["clipboard_text"] = clip
+    r["word_ratio"] = ratio
+    r["copied_card"] = all(c[k] for k in ("target_closed", "closed_before_outcome", "paste_error",
+                                          "no_pasted_event", "card_copied", "clipboard_matches"))
+
+
+def dictation(tag, key, initial="", expect="pasted"):
+    """One dictation: start with `key`, ~8 s of the WAV, stop with `key`, read TextEdit.
+    expect="copied" (scenario s4): TextEdit is closed right after the stop, so the app must skip
+    the paste, leave the text on the clipboard and show the `copied` card."""
+    r = {"tag": tag, "key": key, "initial_text": initial, "expect": expect}
+    copied = expect == "copied"
     if not os.path.exists(APP_BIN):
         r["error"] = "app not built"
         return r
@@ -332,6 +430,8 @@ def dictation(tag, key, initial=""):
 
         textedit_focus()
         r["frontmost_before"] = frontmost()
+        if copied:
+            r["clipboard_marked"] = clip_set(CLIP_MARK)   # whatever is there at the end, the app put it
         i0 = len(ev.items)
         keys.press(key)
         rs = ev.wait(("rec_start",), 10, p, start=i0)
@@ -356,17 +456,40 @@ def dictation(tag, key, initial=""):
         keys.press(key)
         stop_ev = ev.wait(("rec_stop",), 10, p, start=i0)
         r["rec_stop"] = bool(stop_ev)
+        if copied:
+            # now, while the app is still transcribing and formatting (~15 s with the local
+            # engine): the target must be gone before the app gets to the paste
+            kill = textedit_kill()
+            say(f"{tag}: TextEdit closed: {kill}")
         time.sleep(2)
         shooter.stop()
         proc = Shooter(f"{tag}_2_processing")
         proc.start()
-        pasted = ev.wait(("pasted",), PASTE_TIMEOUT, p, start=i0)
-        proc.stop()
-        time.sleep(1.5)
-        shot(f"{tag}_3_after_paste")
-        text = textedit_text()
-        with open(os.path.join(RES, f"textedit_{tag}.txt"), "w", encoding="utf-8") as f:
-            f.write(text if text is not None else "<could not read TextEdit>")
+        if copied:
+            outcome = paste_outcome(ev, PASTE_TIMEOUT, p, i0)
+            pasted = outcome if (outcome or {}).get("ev") == "pasted" else None
+            proc.stop_flag.set()                    # no join yet: the card stays only 4 s
+            card = None
+            end = time.time() + 5
+            while outcome and not pasted and not card and time.time() < end:
+                card = next((e for e in ev.since(i0, "card") if e.get("phase") == "copied"), None)
+                if not card:
+                    time.sleep(0.05)
+            shot_path = shot(f"{tag}_3_copied") if card else None
+            t_shot = time.time()
+            proc.stop()
+            if not card:
+                shot(f"{tag}_3_no_copied_card")
+            copied_checks(r, ev, i0, kill, outcome, card, shot_path, t_shot)
+            text = None                             # TextEdit is gone: nothing to read back
+        else:
+            pasted = ev.wait(("pasted",), PASTE_TIMEOUT, p, start=i0)
+            proc.stop()
+            time.sleep(1.5)
+            shot(f"{tag}_3_after_paste")
+            text = textedit_text()
+            with open(os.path.join(RES, f"textedit_{tag}.txt"), "w", encoding="utf-8") as f:
+                f.write(text if text is not None else "<could not read TextEdit>")
         r["textedit_text"] = text
         r["frontmost_after"] = frontmost()
         r["hotkey_events"] = ev.since(i0, "hotkey")
@@ -393,8 +516,9 @@ def dictation(tag, key, initial=""):
         body = text or ""
         if initial and body.lower().startswith(initial.strip().lower()):
             body = body[len(initial.strip()):]
-        r["word_ratio"] = match_ratio(body)
-        r["pasted_text_matches"] = r["word_ratio"] >= MATCH_MIN
+        if not copied:                              # s4 has its own: the clipboard (copied_checks)
+            r["word_ratio"] = match_ratio(body)
+            r["pasted_text_matches"] = r["word_ratio"] >= MATCH_MIN
         if initial:
             r["initial_text_kept"] = (text or "").lower().startswith(initial.strip().lower())
         r["errors"] = ev.since(0, "error")
@@ -405,6 +529,8 @@ def dictation(tag, key, initial=""):
     finally:
         r["stop"] = stop(p)
         r["events_total"] = len(ev.since(0))
+        if copied:
+            clip_set("")                            # the dictated text does not stay on the runner's clipboard
 
 
 def first_run_page(page):
@@ -465,11 +591,13 @@ def cmd_e2e():
         else:
             textedit_setup()
             out["scenarios"] = {}
-            for tag, key, initial in (("s1_ctrl_option", "ctrl-option", ""),
-                                      ("s2_fn", "fn", ""),
-                                      ("s3_context", "ctrl-option", "I think ")):
+            # s4 last: it closes TextEdit under the app and leaves its own text on the clipboard
+            for tag, key, initial, expect in (("s1_ctrl_option", "ctrl-option", "", "pasted"),
+                                              ("s2_fn", "fn", "", "pasted"),
+                                              ("s3_context", "ctrl-option", "I think ", "pasted"),
+                                              ("s4_copied", "fn", "", "copied")):
                 say(f"scenario {tag}")
-                out["scenarios"][tag] = dictation(tag, key, initial)
+                out["scenarios"][tag] = dictation(tag, key, initial, expect)
                 dump("e2e.json", out)               # partial results survive a crash
             textedit_quit()
         out["first_run"] = {}
@@ -532,18 +660,33 @@ def cmd_summary():
     sc = e2e.get("scenarios") or {}
     fr = e2e.get("first_run") or {}
 
-    def every(key):
-        vals = {k: bool(v.get(key)) for k, v in sc.items()}
+    # s4 expects the paste to be SKIPPED: it counts in every check up to the transcript, not in
+    # the one about the pasted text, and has its own (copied_card)
+    sc_copied = {k: v for k, v in sc.items() if v.get("expect") == "copied"}
+    sc_paste = {k: v for k, v in sc.items() if k not in sc_copied}
+
+    def every(key, among=None):
+        vals = {k: bool(v.get(key)) for k, v in (sc if among is None else among).items()}
         return {"pass": bool(vals) and all(vals.values()), "by_scenario": vals}
 
     checks = {
         "built": {"pass": os.path.exists(APP_BIN), "detail": "dist/Wavetype.app/Contents/MacOS/Wavetype"},
         "dmg": {"pass": bool(glob.glob(os.path.join(ROOT, "dist", "*.dmg")))},
     }
-    for k in ("launched", "ready", "tap_ok", "rec_start", "card_shown", "transcript", "pasted_text_matches"):
+    for k in ("launched", "ready", "tap_ok", "rec_start", "card_shown", "transcript"):
         checks[k] = every(k)
-    checks["pasted_text_matches"]["word_ratio"] = {k: v.get("word_ratio") for k, v in sc.items()}
+    checks["pasted_text_matches"] = every("pasted_text_matches", sc_paste)
+    checks["pasted_text_matches"]["word_ratio"] = {k: v.get("word_ratio") for k, v in sc_paste.items()}
     checks["pasted_text_matches"]["min"] = MATCH_MIN
+    checks["copied_card"] = every("copied_card", sc_copied)
+    checks["copied_card"].update({
+        "detail": {k: {x: y for x, y in (v.get("copied") or {}).items() if x != "clipboard_text"}
+                   or {"error": v.get("error") or "scenario did not reach the paste"}
+                   for k, v in sc_copied.items()},
+        "clipboard_text": {k: v.get("clipboard_text") for k, v in sc_copied.items()},
+        "min": MATCH_MIN,
+        "rule": "target app closed before the paste: error event where=paste, no pasted event, "
+                "a card event with phase copied, the dictated text on the clipboard"})
     # live words on the card while recording: in at least one scenario. The model step of the
     # workflow (model_fetch.py into the app's models folder) is reported next to it, so a red
     # caused by a failed download is told apart from a red caused by the app.
@@ -577,7 +720,8 @@ def cmd_summary():
         "scenarios_brief": {k: {x: v.get(x) for x in ("ready_after_s", "frontmost_before", "textedit_text",
                                                        "word_ratio", "error", "stop", "initial_text_kept",
                                                        "live_first_text", "live_first_after_rec_s",
-                                                       "live_shot")}
+                                                       "live_shot", "expect", "clipboard_text",
+                                                       "copied_card")}
                             for k, v in sc.items()},
         "driver_preflight": e2e.get("driver_preflight"),
         "e2e_error": e2e.get("error") or (e2e.get("exception") or "")[-1500:] or None,

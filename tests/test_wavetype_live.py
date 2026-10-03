@@ -740,6 +740,107 @@ def test_una_dettatura_dopo_il_recupero_torna_normale():
     assert p.phases()[-1] == "inserted", p.calls
 
 
+# ---------- incolla saltato: la card dice "copied", non "inserted" ----------
+def test_incolla_saltato_mostra_copied_e_resta_di_piu():
+    """insert_text torna False (Mac: app di destinazione chiusa o non tornata davanti): il testo
+    e' negli appunti, la card mostra il testo finale in "copied" per LIVE_COPIED_HOLD."""
+    p = started_card()
+    wavetype.rec["held"] = False
+    wavetype.live_show_final("Ciao mondo, tutto bene.")
+    wavetype.live["expect_paste"] = True
+    wavetype.live_pasted(False)
+    wavetype.live_tick()
+    assert p.phases()[-1] == "copied" and "inserted" not in p.phases(), p.calls
+    assert ("update", "Ciao mondo, tutto bene.") in p.calls
+    assert wavetype.LIVE_COPIED_HOLD > wavetype.LIVE_FINAL_HOLD
+    assert wavetype.live["close_at"] > time.perf_counter() + wavetype.LIVE_COPIED_HOLD - 0.5
+    assert p.is_open() and not p.of("close")
+    wavetype.live["close_at"] = time.perf_counter() - 0.01
+    wavetype.live_tick()
+    assert p.of("close") == [False] and wavetype.live["open"] is False   # si dissolve, niente volo
+
+
+def test_incolla_riuscito_resta_inserted():
+    """True (Windows, sempre) e la chiamata senza argomento restano "inserted"."""
+    for args in ((True,), ()):
+        p = started_card()
+        wavetype.rec["held"] = False
+        wavetype.live_show_final("Ciao mondo.")
+        wavetype.live_pasted(*args)
+        wavetype.live_tick()
+        assert p.phases()[-1] == "inserted", (args, p.calls)
+        assert wavetype.live["close_pasted"] is True
+
+
+def test_ne_incollato_ne_negli_appunti_dice_audio_kept():
+    """None = incolla saltato e appunti non scritti: "copied" sarebbe falso, come "inserted".
+    La card dice "unpasted" (NOT PASTED, Audio kept + tasto del recupero): l'audio e' in archivio."""
+    p = started_card()
+    wavetype.rec["held"] = False
+    wavetype.live_show_final("Ciao mondo.")
+    wavetype.live_pasted(None)
+    wavetype.live_tick()
+    assert p.phases()[-1] == "unpasted", p.calls
+
+
+def test_recupero_non_incollato_mostra_copied():
+    p, _ = _recupero("Ciao Marco.", sec=3.0)
+    wavetype.live_show_final("Ciao Marco.")
+    wavetype.live_pasted(False)
+    wavetype.live_tick()
+    assert p.phases()[-1] == "copied" and "recovered" not in p.phases(), p.calls
+    assert ("update", "Ciao Marco.") in p.calls
+
+
+def test_edit_non_incollato_mostra_copied():
+    """Edit riuscito ma incolla saltato: dopo "done" arriva "copied" nello stesso giro di
+    live_tick (la pillola "GRAMMAR FIXED" non fa in tempo a vedersi)."""
+    p = edit_card("ciao marco come stai")
+    wavetype.rec["held"] = False
+    wavetype.edit_result("Ciao Marco, come stai?", "grammar")
+    wavetype.live_pasted(False)
+    wavetype.live_tick()
+    assert p.phases()[-2:] == ["done", "copied"], p.calls
+    assert wavetype.live["close_pasted"] is False
+    assert wavetype.live["close_at"] > time.perf_counter() + wavetype.EDIT_DONE_HOLD
+
+
+def test_copied_non_tocca_la_card_di_una_dettatura_nuova():
+    p = started_card()                       # rec["held"] True: la card e' della dettatura nuova
+    wavetype.live_pasted(False)
+    wavetype.live_tick()
+    assert "copied" not in p.phases() and wavetype.live["close_at"] == 0.0, p.calls
+
+
+def test_insert_text_su_mac_torna_l_esito():
+    """Il ramo Mac di insert_text torna quello che dice mac_sys (qui finto); l'evento di test
+    resta "pasted" o "error". Il ramo Windows non si prova qui: incollerebbe davvero."""
+    class FakeMacSys:
+        PASTE = {"why": "app 7 chiusa", "clip": True}
+        esito = False
+
+        @classmethod
+        def insert_text(cls, pid, text):
+            return cls.esito
+    ev = []
+    saved = (wavetype.IS_MAC, getattr(wavetype, "mac_sys", None), wavetype.testhooks.emit)
+    wavetype.IS_MAC, wavetype.mac_sys = True, FakeMacSys
+    wavetype.testhooks.emit = lambda name, **f: ev.append((name, f.get("where")))
+    try:
+        assert wavetype.insert_text(7, "ciao") is False
+        FakeMacSys.PASTE["clip"] = False                 # appunti non scritti: None, non False
+        assert wavetype.insert_text(7, "ciao") is None
+        FakeMacSys.esito = True
+        assert wavetype.insert_text(7, "ciao") is True
+    finally:
+        wavetype.IS_MAC, wavetype.testhooks.emit = saved[0], saved[2]
+        if saved[1] is None:
+            del wavetype.mac_sys
+        else:
+            wavetype.mac_sys = saved[1]
+    assert ev == [("error", "paste"), ("error", "paste"), ("pasted", None)], ev
+
+
 # ---------- contesto: il cursore a meta' di una frase gia' scritta ----------
 def _detta(ctx, formattato="Domani arrivo presto.", acceso=True):
     """Fa girare il vero _finish() con un contesto dato: torna (incollato, riga di storico)."""

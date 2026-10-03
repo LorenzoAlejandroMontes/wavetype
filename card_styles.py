@@ -33,27 +33,35 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 FONT_DIR = paths.resource(os.path.join("assets", "fonts"), ROOT)
 
 # i tasti scritti sulla card sono quelli veri della piattaforma (wavetype.py): su Mac la
-# dettatura e' Fn (o Ctrl+Option), il recupero Ctrl+Option+R, l'annulla Cmd+Z
+# dettatura e' Fn (o Ctrl+Option), il recupero Ctrl+Option+R, l'annulla Cmd+Z, l'incolla Cmd+V
 if sys.platform == "darwin":
-    K_CHORD, K_RECOVER, K_UNDO = "fn", "Ctrl+Opt+R", "Cmd+Z"
+    K_CHORD, K_RECOVER, K_UNDO, K_PASTE = "fn", "Ctrl+Opt+R", "Cmd+Z", "Cmd+V"
 else:
-    K_CHORD, K_RECOVER, K_UNDO = "Win+Ctrl", "Win+Ctrl+R", "Ctrl+Z"
+    K_CHORD, K_RECOVER, K_UNDO, K_PASTE = "Win+Ctrl", "Win+Ctrl+R", "Ctrl+Z", "Ctrl+V"
 
 STYLES = ("stamp", "glyph", "signal")
 DEFAULT_STYLE = "signal"
 TITLES = {"stamp": "Stamp", "glyph": "Glyph", "signal": "Signal"}
 PHASES = ("listening", "live", "paused", "formatting", "inserted", "cancelled", "offline",
-          "recovering", "recovered", "no_audio", "unrecovered")
+          "recovering", "recovered", "no_audio", "unrecovered", "copied", "unpasted")
+# "copied": l'incolla e' stato saltato (su Mac l'app di destinazione e' stata chiusa o non e'
+# tornata davanti) e il testo sta negli appunti. Corpo con il testo finale intero, pie' col tasto
+# dell'incolla. Su Windows insert_text incolla sempre: la fase non capita.
 # Win+Ctrl+R: le quattro fasi del recupero dell'ultima registrazione. Stanno in PHASES (stesso
 # corpo della dettatura: le parole recuperate si vedono come quelle dettate), senza il prefisso
 # di Edit perche' non cambiano la forma della card, solo testata e pie'.
 RECOVER_PHASES = ("recovering", "recovered", "no_audio", "unrecovered")
-FOOT = ("paused", "cancelled", "offline", "no_audio", "unrecovered")   # fasi col pie' di pagina
+FOOT = ("paused", "cancelled", "offline", "no_audio", "unrecovered", "unpasted",    # fasi col pie' di pagina
+        "copied")
 NO_TIMER = ("cancelled", "no_audio")                                   # fasi senza il tempo a destra
-# pie' di pagina del recupero: (sinistra, tasto, destra). Copy inglese, nessun carattere difensivo.
+# pie' di pagina del recupero e di "copied": (sinistra, tasto, destra). Copy inglese, nessun
+# carattere difensivo.
 R_FOOTERS = {
     "no_audio": ("Dictate once, then", K_RECOVER, "brings it back"),
     "unrecovered": ("Audio kept", K_RECOVER, "try again"),
+    # incolla saltato e appunti non scritti (solo Mac): l'audio e' in archivio, il recupero lo riporta
+    "unpasted": ("Audio kept", K_RECOVER, "brings it back"),
+    "copied": ("On clipboard", K_PASTE, "to paste"),
 }
 
 # file dei font (OFL, sottoinsieme "latin" di Google Fonts: vedi assets/fonts/README.txt)
@@ -404,11 +412,12 @@ def fmt_time(sec, pad=False):
 # La card di Edit e' la stessa lastra della dettatura con un corpo diverso: riga dei chip,
 # riga "YOU ..." con l'istruzione. Le fasi hanno il prefisso "e_" cosi' non incrociano mai
 # quelle della dettatura (PHASES): ogni cache che ha la fase nella chiave resta separata.
-EDIT_MODES = ("e_listening", "e_rewriting", "e_done", "e_cancelled", "e_offline", "e_nothing")
+EDIT_MODES = ("e_listening", "e_rewriting", "e_done", "e_cancelled", "e_offline", "e_nothing",
+              "e_copied")
 E_SAID = ("e_listening",)                      # le fasi con la riga dell'istruzione
 E_CHIPS_ALL = ("e_listening",)                 # tutti e tre i chip
 E_CHIPS_ONE = ("e_rewriting", "e_offline")     # solo il chip scelto (nessuno se libera)
-E_FOOT = ("e_cancelled", "e_offline", "e_nothing")
+E_FOOT = ("e_cancelled", "e_offline", "e_nothing", "e_copied")
 E_HINT = "Say it, or press 1-3"
 E_YOU = "You"
 
@@ -417,6 +426,7 @@ E_FOOTERS = {
     "e_cancelled": ("Selection untouched", "", ""),
     "e_offline": ("Selection unchanged", K_CHORD, "try again"),
     "e_nothing": ("Select text, then", K_CHORD, "edit"),
+    "e_copied": R_FOOTERS["copied"],     # riscrittura non incollata: sta negli appunti
 }
 
 
@@ -587,7 +597,7 @@ PAPER = hexc("#FFFDF6")
 A_TAB = {"live": "#FFD83D", "listening": "#FFD83D", "paused": "#EDE8DA", "formatting": "#C9B6FF",
          "cancelled": "#FF6B4A", "offline": "#FFB23F", "preview": "#FFD83D",
          "recovering": "#C9B6FF", "recovered": "#B6F36A", "no_audio": "#EDE8DA",
-         "unrecovered": "#FFB23F"}
+         "unrecovered": "#FFB23F", "copied": "#EDE8DA", "unpasted": "#FFB23F"}
 A_CUT = hexc("#FF4F2B")
 A_FIXED = hexc("#B6F36A")
 A_FORMAT = hexc("#C9B6FF")
@@ -647,7 +657,8 @@ class Stamp(Style):
                 "offline": ("REC · OFFLINE", True),
                 "recovering": ("RECOVERING", False), "recovered": ("RECOVERED", False),
                 "no_audio": ("NOTHING YET", False),
-                "unrecovered": ("OFFLINE", False)}.get(mode, ("REC", True))
+                "unrecovered": ("OFFLINE", False),
+                "copied": ("COPIED", False), "unpasted": ("NOT PASTED", False)}.get(mode, ("REC", True))
 
     def compact_size(self, panel, mode):
         if mode == "recovering":                    # niente barre e niente timer: label + durata
@@ -915,10 +926,11 @@ class Stamp(Style):
     # -------- Edit Mode
     # La testata diventa azzurra (#7FDBFF): a colpo d'occhio non e' la dettatura (gialla).
     E_TAB = {"e_listening": "#7FDBFF", "e_rewriting": "#7FDBFF", "e_done": "#7FDBFF",
-             "e_offline": "#FFB23F", "e_cancelled": "#FF6B4A", "e_nothing": "#EDE8DA"}
+             "e_offline": "#FFB23F", "e_cancelled": "#FF6B4A", "e_nothing": "#EDE8DA",
+             "e_copied": "#EDE8DA"}
     E_LAB = {"e_listening": ("EDIT", True), "e_rewriting": ("REWRITING", True),
              "e_offline": ("EDIT", True), "e_cancelled": ("CANCELLED", False),
-             "e_nothing": ("NOTHING SELECTED", False)}
+             "e_nothing": ("NOTHING SELECTED", False), "e_copied": ("COPIED", False)}
     edit_line_h = 22
     edit_inset = 2.5 + 16        # bordo + padding di .said/.chips
     edit_pad_r = 2.5 + 16
@@ -1205,7 +1217,8 @@ class Glyph(Style):
                 "formatting": ("FORMATTING", "white"), "cancelled": ("CANCELLED", "red"),
                 "offline": ("REC", "red"), "recovering": ("RECOVERING", "white"),
                 "recovered": ("RECOVERED", "white"), "no_audio": ("NOTHING YET", "white"),
-                "unrecovered": ("OFFLINE", "white")}.get(mode, ("REC", "red"))
+                "unrecovered": ("OFFLINE", "white"),
+                "copied": ("COPIED", "white"), "unpasted": ("NOT PASTED", "white")}.get(mode, ("REC", "red"))
         segs = [(base[0], (255, 255, 255))]
         if mode == "offline":
             segs.append((" · OFFLINE", B_GREY))
@@ -1469,7 +1482,7 @@ class Glyph(Style):
     # Il segno di Edit e' la targhetta bianca "EDIT" nella testata (la dettatura ha il pallino rosso).
     E_LAB = {"e_listening": ("EDIT", "tag"), "e_rewriting": ("REWRITING", "tag"),
              "e_offline": ("EDIT", "tag"), "e_cancelled": ("CANCELLED", "dot"),
-             "e_nothing": ("NOTHING SELECTED", "")}
+             "e_nothing": ("NOTHING SELECTED", ""), "e_copied": ("COPIED", "")}
     E_TAGBG = {"e_offline": B_GREY}
     edit_line_h = 22
     edit_inset = 20
@@ -1729,7 +1742,8 @@ class Signal(Style):
         return {"listening": "LISTENING", "live": "LIVE", "paused": "PAUSED", "formatting": "FORMATTING",
                 "cancelled": "CANCELLED", "offline": "OFFLINE · RECORDING",
                 "recovering": "RECOVERING", "recovered": "RECOVERED", "no_audio": "NOTHING YET",
-                "unrecovered": "OFFLINE"}.get(mode, "LIVE")
+                "unrecovered": "OFFLINE", "copied": "COPIED",
+                "unpasted": "NOT PASTED"}.get(mode, "LIVE")
 
     def _right(self, mode, panel):
         if mode in NO_TIMER:
@@ -1852,7 +1866,7 @@ class Signal(Style):
             text_center(img, right, self.r_font(), hexc("#C9CDD4"), xr, cy, self.px(0.22), right=True)
             xr -= rw + self.px(12)
         w = xr - x
-        if w > 8 and mode not in RECOVER_PHASES:
+        if w > 8 and mode not in RECOVER_PHASES and mode not in ("copied", "unpasted"):   # voce finita: niente traccia
             self._scope(img, x, cy, w, mode, panel, now)
 
     def _scope(self, img, x0, cy, w, mode, panel, now, col=None):
@@ -1953,8 +1967,8 @@ class Signal(Style):
     E_ICE = hexc("#6FD6FF")
     E_LAB = {"e_listening": ("EDIT", True), "e_rewriting": ("REWRITING", True),
              "e_offline": ("EDIT", True), "e_cancelled": ("CANCELLED", False),
-             "e_nothing": ("NOTHING SELECTED", False)}
-    E_COL = {"e_offline": D_ORANGE, "e_cancelled": D_CUT, "e_nothing": D_DIM}
+             "e_nothing": ("NOTHING SELECTED", False), "e_copied": ("COPIED", False)}
+    E_COL = {"e_offline": D_ORANGE, "e_cancelled": D_CUT, "e_nothing": D_DIM, "e_copied": D_DIM}
     edit_line_h = 22
     edit_inset = 20
     edit_pad_r = 20
@@ -2078,7 +2092,8 @@ class Signal(Style):
         if w > 8:
             self._scope(img, x, cy, w, "formatting" if mode == "e_rewriting" else
                         {"e_cancelled": "cancelled", "e_offline": "offline",
-                         "e_nothing": "paused"}.get(mode, "live"), panel, now, col)
+                         "e_nothing": "paused", "e_copied": "paused"}.get(mode, "live"),
+                        panel, now, col)
         self._edit_body(panel, img, ox, oy, mode, cw, ch, top, pt)
 
     _edit_body = Stamp._edit_body

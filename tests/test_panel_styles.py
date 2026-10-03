@@ -158,6 +158,61 @@ def test_parole_fuori_latin():
     p.destroy()
 
 
+COPIED_TEXT = "Hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?"
+
+
+def test_copied_rende_nei_tre_stili_col_pie_dell_incolla():
+    """Incolla saltato: testata COPIED, il testo finale intero nel corpo, pie' col tasto
+    dell'incolla della piattaforma (Ctrl+V qui, Cmd+V su Mac)."""
+    import card_styles as cs
+    assert "copied" in LP.PHASES and "copied" in cs.FOOT
+    assert cs.K_PASTE == ("Cmd+V" if sys.platform == "darwin" else "Ctrl+V")
+    assert cs.R_FOOTERS["copied"] == ("On clipboard", cs.K_PASTE, "to paste")
+    for st in LP.STYLES:
+        p, c = panel(st)
+        p.open()
+        p.update({"committed": COPIED_TEXT, "tentative": "", "rev": 1})
+        run(p, c, 0.4)
+        p.set_phase("formatting")
+        run(p, c, 0.3)
+        keys, real = [], p.style._key
+        p.style._key = lambda dst, text, x, cy: keys.append(text) or real(dst, text, x, cy)
+        try:
+            p.set_phase("copied")
+            run(p, c, 0.8)
+            im = p.render_frame()
+        finally:
+            del p.style._key
+        assert p.mode == "copied" and p.is_open() and p.style.has_foot("copied"), st
+        lab = p.style._label("copied", p)                    # la testata: una parola
+        assert "COPIED" in str(lab) and "REC" not in str(lab) and "LIVE" not in str(lab), (st, lab)
+        assert keys and {k.upper() for k in keys} == {cs.K_PASTE.upper()}, (st, keys)
+        assert " ".join(w.text for w in p.words if w.state == "live") == COPIED_TEXT, st
+        assert 1 <= p._n_lines <= p._maxl, (st, p._n_lines)   # tutte le righe a schermo
+        top, pt, pb, bot = p._zones(1.0)
+        assert bot > 0 and abs(p._card_h - (top + pt + p._n_lines * p.line_h + pb + bot)) < 1.5, st
+        box = im.getchannel("A").getbbox()
+        assert box and box[2] - box[0] > 60 and box[3] - box[1] > 20, (st, im.size)
+        p.destroy()
+
+
+def test_copied_resta_piu_di_inserted_e_si_chiude_da_sola():
+    assert LP.T_COPIED > LP.T_INSERTED and LP.T_COPIED > LP.T_RECOVERED
+    for st in LP.STYLES:
+        p, c = panel(st)
+        p.open()
+        p.update({"committed": COPIED_TEXT, "tentative": "", "rev": 1})
+        run(p, c, 0.4)
+        p.close(pasted=True)                                # una close() arrivata prima: la fase vince
+        p.set_phase("copied")
+        p.close(pasted=True)                                # ... e una dopo non la taglia
+        run(p, c, LP.T_COPIED - 0.3)
+        assert p.is_open() and p.phase != "closing" and p.mode == "copied", (st, p.phase)
+        run(p, c, 0.9)
+        assert not p.is_open() and not p.holds_hud(), st    # 4 s + uscita, da sola
+        p.destroy()
+
+
 if __name__ == "__main__":
     n = ok = 0
     for name, fn in list(globals().items()):

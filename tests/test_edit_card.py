@@ -324,7 +324,8 @@ def test_dettatura_dopo_edit():
 
 def test_fasi_dettatura_non_toccate_da_edit():
     assert LP.PHASES == ("listening", "live", "paused", "formatting", "inserted", "cancelled",
-                         "offline", "recovering", "recovered", "no_audio", "unrecovered")
+                         "offline", "recovering", "recovered", "no_audio", "unrecovered",
+                         "copied", "unpasted")
     assert all(not m.startswith("e_") for m in LP.PHASES)
     assert all(m.startswith("e_") for m in cs.EDIT_MODES)
 
@@ -386,9 +387,33 @@ def test_recupero_copy_senza_caratteri_difensivi():
     """Il pie' dice cosa fare, non cosa ci manca (niente "no", "not", "can't", "failed")."""
     for mode, (left, key, right) in cs.R_FOOTERS.items():
         testo = f"{left} {right}".lower()
-        assert key.startswith("Win+Ctrl"), mode
+        assert key.startswith("Win+Ctrl") or (mode == "copied" and key == cs.K_PASTE), mode
         for brutta in ("no ", "not ", "n't", "fail", "error", "unable", "sorry"):
             assert brutta not in testo, (mode, brutta, testo)
+
+
+def test_edit_copied_testata_e_pie_con_il_tasto_dell_incolla():
+    """Riscrittura non incollata (incolla saltato): niente pillola "GRAMMAR FIXED", la card dice
+    COPIED con il tasto dell'incolla nel pie' e si chiude da sola dopo T_COPIED."""
+    assert "copied" in LP.EDIT_PHASES and "e_copied" in cs.E_FOOT
+    assert cs.E_FOOTERS["e_copied"] == ("On clipboard", cs.K_PASTE, "to paste")
+    for st in LP.STYLES:
+        p, c = panel(st)
+        p.open_edit(None, 26)
+        run(p, c, 0.3)
+        p.set_chip("1")
+        p.set_result(24)
+        p.set_phase("done")
+        p.set_phase("copied")                         # stesso frame: la pillola non si vede
+        run(p, c, 0.6)
+        assert p.mode == "e_copied" and p.style.E_LAB["e_copied"][0] == "COPIED", st
+        top, pt, pb, bot = p._zones(1.0)
+        assert abs(p._card_h - (top + bot)) < 1.5, (st, p._card_h, top + bot)
+        run(p, c, LP.T_COPIED - 1.0)
+        assert p.is_open() and p.phase != "closing", st
+        run(p, c, 1.2)
+        assert not p.is_open(), st
+        p.destroy()
 
 
 if __name__ == "__main__":
