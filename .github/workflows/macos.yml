@@ -281,34 +281,50 @@ jobs:
       - name: "Release: first launch from a quarantined download"
         if: always() && steps.rel_done.outcome == 'success'
         continue-on-error: true
+        timeout-minutes: 8
         run: |
-          set -o pipefail
+          set +e
           {
+            # every command has its own deadline and prints its exit code: run #12 sat in this
+            # step for 90 minutes with nothing to say which command was waiting
+            t() { local s="$1"; shift; echo "== [$(date +%T)] $*"; perl -e 'alarm shift; exec @ARGV' "$s" "$@"; local rc=$?; echo "== rc=$rc"; return $rc; }
             DMG="$(ls dist/Wavetype-*-arm64.dmg | head -1)"
-            pkill -x Wavetype || true
+            pkill -x Wavetype
             Q="0083;$(printf '%x' "$(date +%s)");Safari;$(uuidgen)"
             mkdir -p "$HOME/Downloads"; DL="$HOME/Downloads/$(basename "$DMG")"
             cp "$DMG" "$DL"; xattr -w com.apple.quarantine "$Q" "$DL"
-            hdiutil attach -nobrowse -readonly -mountpoint /tmp/wavetype-dmg "$DL"
-            ls -la /tmp/wavetype-dmg
             rm -rf /Applications/Wavetype.app
-            ditto /tmp/wavetype-dmg/Wavetype.app /Applications/Wavetype.app
+            if t 90 hdiutil attach -nobrowse -readonly -mountpoint /tmp/wavetype-dmg "$DL"; then
+              ls -la /tmp/wavetype-dmg
+              t 60 ditto /tmp/wavetype-dmg/Wavetype.app /Applications/Wavetype.app
+              t 30 hdiutil detach /tmp/wavetype-dmg
+            else
+              echo "== the quarantined dmg did NOT mount: the app is copied from dist/ instead"
+              screencapture -x "$RESULTS/shots/gatekeeper_0_dmg_not_mounted.png"
+              t 60 ditto dist/Wavetype.app /Applications/Wavetype.app
+            fi
             xattr -r -w com.apple.quarantine "$Q" /Applications/Wavetype.app
-            hdiutil detach /tmp/wavetype-dmg || true
             echo "== quarantine: $(xattr -p com.apple.quarantine /Applications/Wavetype.app)"
-            echo "== spctl"; spctl -a -vv /Applications/Wavetype.app
-            echo "== syspolicy_check"; syspolicy_check distribution /Applications/Wavetype.app || true
-            open /Applications/Wavetype.app
-            sleep 10
-            screencapture -x "$RESULTS/shots/gatekeeper_1_after_open.png" || true
+            t 60 spctl -a -vv /Applications/Wavetype.app
+            t 60 syspolicy_check distribution /Applications/Wavetype.app
+            # in the background: `open` may not return until the Gatekeeper question is answered
+            echo "== [$(date +%T)] open /Applications/Wavetype.app (background)"
+            ( perl -e 'alarm shift; exec @ARGV' 120 open /Applications/Wavetype.app > "$RESULTS/logs/gatekeeper_open.txt" 2>&1; echo "rc=$?" >> "$RESULTS/logs/gatekeeper_open.txt" ) &
+            sleep 12
+            screencapture -x "$RESULTS/shots/gatekeeper_1_after_open.png"
+            echo "== process before the click"; pgrep -lf "/Applications/Wavetype.app" || echo "Wavetype is not running yet"
             echo "== windows of CoreServicesUIAgent"
-            osascript -e 'tell application "System Events" to tell process "CoreServicesUIAgent" to get {name, description} of every UI element of every window' || true
-            osascript -e 'tell application "System Events" to tell process "CoreServicesUIAgent" to click button "Open" of window 1' || true
+            t 30 osascript -e 'tell application "System Events" to tell process "CoreServicesUIAgent" to get {role, name, description} of entire contents of every window'
+            t 30 osascript packaging/mac/ci/gatekeeper_open.applescript
             sleep 15
-            screencapture -x "$RESULTS/shots/gatekeeper_2_app_running.png" || true
+            screencapture -x "$RESULTS/shots/gatekeeper_2_app_running.png"
+            echo "== open said: $(cat "$RESULTS/logs/gatekeeper_open.txt" 2>/dev/null)"
             echo "== process"; pgrep -lf "/Applications/Wavetype.app" || echo "Wavetype is NOT running"
-            pkill -x Wavetype || true
-          } 2>&1 | tee "$RESULTS/gatekeeper.log"
+            pkill -x Wavetype
+            echo "== done"
+          } > "$RESULTS/gatekeeper.log" 2>&1
+          cat "$RESULTS/gatekeeper.log"
+          exit 0
 
       - name: Summary
         if: always()
