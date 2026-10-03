@@ -1,0 +1,4 @@
+
+idle              0 / 475 MB[modello] live pronto (gia' presente): /Users/runner/Library/Application Support/Wavetype/models/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-320ms-int8-2026-06-11
+
+ {'state': 'ready', 'done': 475272949, 'total': 475272949, 'error': None}
