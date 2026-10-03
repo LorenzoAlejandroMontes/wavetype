@@ -10,9 +10,9 @@ name: macOS build and test
 
 on:
   push:
-    # macos-release: same job, but the app and the .dmg get the Developer ID signature through
+    # macos-release*: same job, but the app and the .dmg get the Developer ID signature through
     # rcodesign remote signing (packaging/mac/ci/remote_sign.sh) and Apple's notarization ticket
-    branches: [macos, macos-release]
+    branches: [macos, 'macos-release*']
   workflow_dispatch:
     inputs:
       hardened:
@@ -56,7 +56,7 @@ jobs:
 
       - name: Sign and DMG
         id: sign
-        if: steps.build.outcome == 'success' && github.ref_name != 'macos-release'
+        if: steps.build.outcome == 'success' && !startsWith(github.ref_name, 'macos-release')
         continue-on-error: true
         env:
           WAVETYPE_HARDENED: ${{ inputs.hardened || '1' }}
@@ -90,7 +90,7 @@ jobs:
       # it, signs, and submits to Apple's notary; the runner waits for the ticket and staples it.
       - name: "Release: start signing the app"
         id: rel_app_start
-        if: steps.build.outcome == 'success' && github.ref_name == 'macos-release'
+        if: steps.build.outcome == 'success' && startsWith(github.ref_name, 'macos-release')
         run: |
           bash packaging/mac/ci/remote_sign.sh tool
           bash packaging/mac/ci/remote_sign.sh start app
