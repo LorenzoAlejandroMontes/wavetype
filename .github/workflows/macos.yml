@@ -109,7 +109,7 @@ jobs:
         if: always()
         run: |
           mkdir -p build/mac
-          say -o build/mac/test.aiff "Hello Sarah, the meeting moved to Thursday at three. Can you bring the slides?"
+          say -o build/mac/test.aiff "[[slnc 600]] Hello Sarah, the meeting moved to Thursday at three. Can you bring the slides?"
           afconvert -f WAVE -d LEI16@16000 -c 1 build/mac/test.aiff "$RESULTS/test.wav"
           afinfo "$RESULTS/test.wav" | tee "$RESULTS/test_wav_info.txt"
 

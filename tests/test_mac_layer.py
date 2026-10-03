@@ -30,6 +30,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import wave
 
 import numpy as np
@@ -580,14 +581,23 @@ def test_frontmost_pid_ripiego_ax_con_timeout_corto():
     sistema (6 s): al massimo FRONT_AX_S, o il tempo che resta della catena che lo chiama."""
     import mac_ax
     real_fp = mac_ax.frontmost_pid
-    t0 = time.perf_counter()
-    got, fake = _with_fake_ax(1.0, lambda m: real_fp())      # AX che non risponde per 1 s
-    took = time.perf_counter() - t0
-    eq(got, 0)
-    assert took < mac_ax.FRONT_AX_S + 0.06, f"ripiego AX durato {took:.3f} s"
-    assert fake.timeouts and max(fake.timeouts) <= mac_ax.FRONT_AX_S + 1e-9, fake.timeouts
-    got, fake = _with_fake_ax(1.0, lambda m: real_fp(time.perf_counter() - 1))   # budget finito
-    eq((got, fake.n), (0, 0), "scadenza gia' passata: nessuna chiamata AX")
+    # NSWorkspace muto anche sul Mac vero (run #6: li' rispondeva col pid dell'app davanti, 310)
+    saved_appkit = sys.modules.get("AppKit")
+    sys.modules["AppKit"] = types.ModuleType("AppKit")
+    try:
+        t0 = time.perf_counter()
+        got, fake = _with_fake_ax(1.0, lambda m: real_fp())      # AX che non risponde per 1 s
+        took = time.perf_counter() - t0
+        eq(got, 0)
+        assert took < mac_ax.FRONT_AX_S + 0.06, f"ripiego AX durato {took:.3f} s"
+        assert fake.timeouts and max(fake.timeouts) <= mac_ax.FRONT_AX_S + 1e-9, fake.timeouts
+        got, fake = _with_fake_ax(1.0, lambda m: real_fp(time.perf_counter() - 1))   # budget finito
+        eq((got, fake.n), (0, 0), "scadenza gia' passata: nessuna chiamata AX")
+    finally:
+        if saved_appkit is None:
+            sys.modules.pop("AppKit", None)
+        else:
+            sys.modules["AppKit"] = saved_appkit
 
 
 # ------------------------------------------------------------------ mac_geom
