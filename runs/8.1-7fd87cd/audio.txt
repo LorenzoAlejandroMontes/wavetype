@@ -1,0 +1,33 @@
+Audio:
+
+    Devices:
+
+        Apple Virtual Sound Device:
+
+          Default Input Device: Yes
+          Input Channels: 2
+          Manufacturer: Apple Inc.
+          Current SampleRate: 48000
+          Transport: Built-in
+          Input Source: Microphone
+
+        Apple Virtual Sound Device:
+
+          Default Output Device: Yes
+          Default System Output Device: Yes
+          Manufacturer: Apple Inc.
+          Output Channels: 2
+          Current SampleRate: 48000
+          Transport: Built-in
+          Output Source: Speakers
+
+        Null Audio Device:
+
+          Input Channels: 2
+          Manufacturer: Apple Inc.
+          Output Channels: 2
+          Current SampleRate: 44100
+          Transport: Virtual
+          Input Source: Data Source Item 0
+          Output Source: Data Source Item 0
+
