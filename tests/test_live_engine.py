@@ -319,7 +319,9 @@ def test_prompt_con_vocabolario_e_coda():
     eng = L.LiveEngine("k", vocab="Wavetype, Klaus", log=lambda *_: None, sr_in=L.SR,
                        http_post=m, pace=0.4)
     eng.start()
-    feed_stream(eng, a, L.SR, speed=10.0)
+    # speed 5: a 10 solo l'ultima richiesta su 4 portava la coda (misurato su Windows), e sul
+    # runner Mac del run #8 nessuna; a 5 sono 4 su 8
+    feed_stream(eng, a, L.SR, speed=5.0)
     eng.stop(timeout=10)
     assert all("Wavetype" in c["data"].get("prompt", "") for c in m.calls), "vocabolario non passato"
     assert any("w0" in c["data"].get("prompt", "") for c in m.calls[1:]), "coda non passata"

@@ -362,9 +362,16 @@ def test_activate_ricontrolla_chi_e_davanti():
             self.asked += 1
 
     real = (mac_sys._front_pid, mac_sys._running_app, mac_sys.log, mac_sys.FRONT_WAIT,
-            mac_sys.FRONT_POLL)
+            mac_sys.FRONT_POLL, mac_sys.time)
     mac_sys.log = lambda m: None
-    mac_sys.FRONT_WAIT, mac_sys.FRONT_POLL = 0.10, 0.01
+    mac_sys.FRONT_WAIT, mac_sys.FRONT_POLL = 0.125, 0.015625
+    # tempo finto, come _ax_con_orologio_finto: activate legge l'ora e dorme solo con `time`, e
+    # qui dormire sposta l'orologio senza aspettare (run #8, runner lento: tre sleep da 0,01 s
+    # veri hanno passato i 0,10 s di attesa, credo, e la risposta e' stata False)
+    clock = [1000.0]
+    mac_sys.time = types.SimpleNamespace(
+        perf_counter=lambda: clock[0],
+        sleep=lambda s: clock.__setitem__(0, clock[0] + s))
     try:
         app = App()
         mac_sys._running_app = lambda pid: app
@@ -375,9 +382,9 @@ def test_activate_ricontrolla_chi_e_davanti():
         eq((mac_sys.activate(7), app.asked), (mac_sys.ACTIVATED, 1),
            "riportata davanti: lo si dice (ACTIVATED, non True)")
         mac_sys._front_pid = lambda: 9
-        t0 = time.perf_counter()
+        t0 = clock[0]
         eq(mac_sys.activate(7), False, "non torna davanti")
-        assert 0.09 <= time.perf_counter() - t0 < 0.5, time.perf_counter() - t0
+        eq(clock[0] - t0, mac_sys.FRONT_WAIT, "aspetta FRONT_WAIT, non di piu'")
         mac_sys._running_app = lambda pid: None
         eq(mac_sys.activate(7), None, "app chiusa")
         eq(mac_sys.activate(0), mac_sys.UNKNOWN, "pid ignoto: si incolla come prima")
@@ -386,7 +393,7 @@ def test_activate_ricontrolla_chi_e_davanti():
         eq(mac_sys.activate(7), mac_sys.UNKNOWN, "nessuna fonte risponde: non si sa")
     finally:
         (mac_sys._front_pid, mac_sys._running_app, mac_sys.log, mac_sys.FRONT_WAIT,
-         mac_sys.FRONT_POLL) = real
+         mac_sys.FRONT_POLL, mac_sys.time) = real
 
 
 def test_chi_e_davanti_decide_ax():
@@ -572,13 +579,16 @@ class _FakeASClock(_FakeAS):
         return self.cost <= el.timeout
 
 
-def _caret_con_orologio_finto(cost, budget):
-    """get_caret_rect_verbose con AX finto e orologio finto: mac_ax legge l'ora solo da
-    `time.perf_counter`, e qui il nome `time` DENTRO mac_ax punta a un orologio che avanza solo
+T0_FINTO = 1000.0                       # 1000 e i costi in potenze di due: somme esatte in binario
+
+
+def _ax_con_orologio_finto(cost, fn):
+    """fn(mac_ax) con AX finto e orologio finto: mac_ax legge l'ora solo da `time.perf_counter`,
+    e qui il nome `time` DENTRO mac_ax punta a un orologio che parte da T0_FINTO e avanza solo
     quando una chiamata AX "costa". Niente sleep veri: il risultato non dipende dalla macchina
     (con l'orologio vero: 0,255 s sul runner Mac del run #7 e 0,369 s su Windows una volta su
-    cinque, contro un limite di 0,21). Torna (rect, src, secondi finti passati, AX finto)."""
-    clock = [1000.0]                    # 1000 e i costi in potenze di due: somme esatte in binario
+    cinque, contro un limite di 0,21). Torna (risultato di fn, secondi finti passati, AX finto)."""
+    clock = [T0_FINTO]
 
     def go(m):
         real_time, real_mod = m.time, m._ax["mod"]
@@ -586,13 +596,19 @@ def _caret_con_orologio_finto(cost, budget):
         m.time = types.SimpleNamespace(perf_counter=lambda: clock[0])
         m._ax["mod"] = fake
         try:
-            rect, src, _ms = m.get_caret_rect_verbose(4242, budget)
+            return fn(m), fake
         finally:
             m.time, m._ax["mod"] = real_time, real_mod
-        return rect, src, fake
 
-    (rect, src, fake), _unused = _with_fake_ax(cost, go)
-    return rect, src, clock[0] - 1000.0, fake
+    (got, fake), _unused = _with_fake_ax(cost, go)
+    return got, clock[0] - T0_FINTO, fake
+
+
+def _caret_con_orologio_finto(cost, budget):
+    """get_caret_rect_verbose su _ax_con_orologio_finto. Torna (rect, src, secondi finti, AX finto)."""
+    (rect, src, _ms), took, fake = _ax_con_orologio_finto(
+        cost, lambda m: m.get_caret_rect_verbose(4242, budget))
+    return rect, src, took, fake
 
 
 def test_caret_ax_una_scadenza_per_tutta_la_catena():
@@ -624,14 +640,18 @@ def test_caret_ax_veloce_arriva_al_carattere_prima():
 
 
 def test_testo_prima_del_caret_con_scadenza():
+    """Tempo finto (run #8: con l'orologio vero 0,407 s sul runner Mac contro un limite di 0,36)."""
     import mac_ax
-    t0 = time.perf_counter()
-    got, _fake = _with_fake_ax(0.20, lambda m: m.before_caret(4242, mac_ax.LOOKBACK, 0.30))
-    took = time.perf_counter() - t0
+    budget = 0.25
+    got, took, fake = _ax_con_orologio_finto(
+        0.1875, lambda m: m.before_caret(4242, mac_ax.LOOKBACK, budget))
     eq(got, None, "app lenta oltre il budget")
-    assert took < 0.30 + 0.06, f"before_caret durato {took:.3f} s"
-    got, _fake = _with_fake_ax(0.001, lambda m: m.before_caret(4242, mac_ax.LOOKBACK, 0.30))
+    eq(took, budget, "la catena dura quanto il budget")
+    assert max(fake.timeouts) <= budget, fake.timeouts
+    got, took, _fake = _ax_con_orologio_finto(
+        0.03125, lambda m: m.before_caret(4242, mac_ax.LOOKBACK, budget))
     eq(got, "hello", "i 5 caratteri prima del caret")
+    assert took <= budget, took
 
 
 def test_frontmost_pid_ripiego_ax_con_timeout_corto():
@@ -643,13 +663,12 @@ def test_frontmost_pid_ripiego_ax_con_timeout_corto():
     saved_appkit = sys.modules.get("AppKit")
     sys.modules["AppKit"] = types.ModuleType("AppKit")
     try:
-        t0 = time.perf_counter()
-        got, fake = _with_fake_ax(1.0, lambda m: real_fp())      # AX che non risponde per 1 s
-        took = time.perf_counter() - t0
+        # tempo finto (con l'orologio vero: 0,211 s sul runner Mac del run #8, limite 0,16)
+        got, took, fake = _ax_con_orologio_finto(1.0, lambda m: real_fp())   # AX muto per 1 s
         eq(got, 0)
-        assert took < mac_ax.FRONT_AX_S + 0.06, f"ripiego AX durato {took:.3f} s"
+        assert took <= mac_ax.FRONT_AX_S + 1e-9, f"ripiego AX durato {took:.3f} s"
         assert fake.timeouts and max(fake.timeouts) <= mac_ax.FRONT_AX_S + 1e-9, fake.timeouts
-        got, fake = _with_fake_ax(1.0, lambda m: real_fp(time.perf_counter() - 1))   # budget finito
+        got, took, fake = _ax_con_orologio_finto(1.0, lambda m: real_fp(T0_FINTO - 1))   # budget finito
         eq((got, fake.n), (0, 0), "scadenza gia' passata: nessuna chiamata AX")
     finally:
         if saved_appkit is None:
@@ -777,9 +796,12 @@ def test_wavstream_a_tempo_reale_poi_silenzio():
         time.sleep(0.40)
         st.stop()
         st.close()
+        took = time.perf_counter() - t0
     n = len(got)
     expect = 0.40 * sr / H.WAV_BLOCK                      # ~37 blocchi in 0,4 s
-    assert 0.7 * expect <= n <= 1.15 * expect + 2, (n, expect)
+    # il tetto si conta sul tempo passato davvero: sul runner Mac del run #8 lo sleep da 0,40 s
+    # e' durato di piu' (credo ~0,49) e i blocchi erano 46, giusti per quel tempo
+    assert 0.7 * expect <= n <= 1.15 * took * sr / H.WAV_BLOCK + 2, (n, expect, took)
     assert all(b.shape == (H.WAV_BLOCK, 1) and k == H.WAV_BLOCK for _t, b, k in got)
     voiced = int(np.ceil(0.1 * sr / H.WAV_BLOCK))         # 10 blocchi di voce, poi silenzio
     assert all(float(np.abs(b).max()) > 0.2 for _t, b, _k in got[:voiced - 1])

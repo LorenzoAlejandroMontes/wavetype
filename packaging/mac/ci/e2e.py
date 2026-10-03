@@ -35,6 +35,7 @@ READY_TIMEOUT = 600          # the first launch may download the local model
 PASTE_TIMEOUT = 240
 RECORD_SECS = 8
 LIVE_SHOT_BEFORE_STOP = 1.0  # the live-words screenshot falls this long before the stop hotkey
+COPIED_SETTLE_S = 1.5        # s4: second screenshot this long after the copied card appears
 MATCH_MIN = 0.6
 
 sys.path.insert(0, HERE)
@@ -477,10 +478,19 @@ def dictation(tag, key, initial="", expect="pasted"):
                     time.sleep(0.05)
             shot_path = shot(f"{tag}_3_copied") if card else None
             t_shot = time.time()
+            # run 8: the first shot caught the card 0.2 s into the phase change, text still
+            # mid-animation. A second one once it has settled (the card stays 4 s)
+            shot_b, t_shot_b = None, None
+            if card and card.get("t"):
+                time.sleep(max(0.0, card["t"] + COPIED_SETTLE_S - time.time()))
+                t_shot_b = time.time()
+                shot_b = shot(f"{tag}_3_copied_b")
             proc.stop()
             if not card:
                 shot(f"{tag}_3_no_copied_card")
             copied_checks(r, ev, i0, kill, outcome, card, shot_path, t_shot)
+            r["copied"]["shot_b"] = shot_b
+            r["copied"]["shot_b_start_after_card_s"] = round(t_shot_b - card["t"], 2) if t_shot_b else None
             text = None                             # TextEdit is gone: nothing to read back
         else:
             pasted = ev.wait(("pasted",), PASTE_TIMEOUT, p, start=i0)
