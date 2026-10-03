@@ -1,0 +1,23 @@
+signing did not end in 2400 s (did the owner join the session?)
+connecting to wss://ws.codesign.gregoryszorc.com/
+session successfully created on server
+
+Run the following command to join this signing session:
+
+    rcodesign remote-sign gmpwdWJsaWNrZXkwg1kBALmHW-0cuxYsp6EIj0k3KxWr7J_glK5X6yrM_dpu0SRepHmkerWRMCg6uu-By7b-K1U8BOu97sebwJSHkV02yU6Tx_a09EHIPhJgGketPiVJN9ByRwR2aWI-yQYMwdGAsIGHGmLhOcPr8YjQY7OtMN6w76AfCbeCGNezjFEsBmCZ4yAKgc0eX_DPAxXQFzSmVyWtpzDDY8p3abQ0MqevXXPyP3iRNvJ7-6C7skMPUerVQMUSr1vZ9u2NgSxuzbX1Sem9IsHfp8HkiM7SUJcCMiXLPzP2BVXBNYh48pQHJulfHn6xs_UFahCrMT2XN82bONZ1zPFrwWJ_-c-bL7CFAfhZASYwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC8dvqo2lE7FgchEZJ_n55uODf4eGpzYl7PXucCuKrKT_mGW4EiqkeEfZjuKdzn4kwiDdS5arPlbrF5Wy4l28vdfNnDQWl-6Z2UBpZIvgrgLRRYgnWU4_FLEql_6MUsvBwqTqWmjQTaR-_5DS9F36ePuhqyRo-ODeVGadAMky1NwvsSNOLY5_v8LSEud6O412Q3RpA6HSUzaReWH_gIBgxdT5Aj8zCwfSgzZ-EhhEEBCo4ohhp8A8i6f53L6UIaeDveuwNcPMRXAIg-76hY3lI3N3OmXA4GZLNqNykQTrlL1TuZH9BUNfUWLN03JsRk--D3uZ6GyDq8Iy0wOZ6pD4_xAgMBAAFY2v2Kke4tQw89N8T3Mz2WD2aw8Z2GkQH6KQy7anIzopbkLbxv2HXyyh_xhj9vkC19WkgX15_1PeQI3fAziOQcvfvrlb9B9Vz7mKGEy79d0joNm67i1zP9IXUi6NX5yzjDkZYAI4nuWBfTCqGwQMCb0J_LSZSSbc793HBm1wYxfk0qQ0XsctShBdHMsyJqtjk4bvNpWXLR7wdz4MQ4lxfTr0RIYJQ2DD2QCH8dnnJKsmkFzq87DdmF1s_XLiiZxRHZYVdw8RilRm6_ZbiOSB1JwIRby4fGqTetM09Y__8
+
+Or if this output is too long, paste the following output:
+
+-----BEGIN SESSION JOIN STRING-----
+Rm6/ZbiOSB1JwIRby4fGqTetM09Y//8=
+-----END SESSION JOIN STRING-----
+
+Into an interactive editor using:
+
+    rcodesign remote-sign --editor
+
+Or into a new file whose path you define with:
+
+    rcodesign remote-sign --sjs-path /path/to/file/you/just/saved
+
+(waiting for remote signer to join)
