@@ -50,6 +50,29 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Get-FileHash dist\Wavetype-Setup.exe -Algorithm SHA256 | Format-List
 
+      # The installer as a person runs it, on this clean machine: install, start the installed app
+      # with a made-up key (the Groq call is expected to be refused), read its log.
+      - name: Install it and start it
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\Wavetype-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
+          $exe = "$env:LOCALAPPDATA\Programs\Wavetype\Wavetype.exe"
+          if (-not (Test-Path $exe)) { throw "Wavetype.exe is not where the installer puts it" }
+          $v = (Get-Item $exe).VersionInfo.ProductVersion
+          Write-Host "installed ProductVersion: $v"
+          if ($v -ne $env:V) { throw "installed version $v, expected $env:V" }
+          New-Item -ItemType Directory -Force "$env:APPDATA\Wavetype" | Out-Null
+          Set-Content "$env:APPDATA\Wavetype\groq_key.txt" ("gsk_" + ("Z" * 52)) -NoNewline
+          $p = Start-Process $exe -ArgumentList '--smoke-test','25' -PassThru
+          if (-not $p.WaitForExit(180000)) { $p.Kill(); Write-Host "the app did not exit by itself in 180 s" }
+          Write-Host "app exit code: $($p.ExitCode)"
+          $log = "$env:LOCALAPPDATA\Wavetype\wavetype.log"
+          Get-Content $log -Encoding utf8
+          Get-ChildItem "$env:LOCALAPPDATA\Wavetype" | Format-Table Name, Length
+          if (-not (Select-String -Path $log -Pattern 'PRONTO' -Quiet)) { throw "the app never got to PRONTO" }
+          if (-not (Select-String -Path $log -Pattern '\[smoke\] flac ok' -Quiet)) { throw "FLAC encoding did not work in the installed app" }
+
       - uses: actions/upload-artifact@v7
         with:
           name: Wavetype-Setup
