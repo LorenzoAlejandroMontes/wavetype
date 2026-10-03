@@ -1,0 +1,25 @@
+[app] eseguibile /Users/runner/work/wavetype/wavetype/dist/Wavetype.app/Contents/MacOS/Wavetype | impostazioni /Users/runner/Library/Application Support/Wavetype | dati /Users/runner/Library/Application Support/Wavetype
+Python 3.12.10 | motore: locale small
+mic: Apple Virtual Sound Device
+[live] motore anteprima: local · stile card: signal (Win+Ctrl+T cambia)
+gia' in esecuzione — esco (single instance).
+PRONTO. Fn (o Ctrl+Option): tocca per registrare/fermare, tieni premuto per parlare finche' tieni. Ctrl+Option+R recupera l'ultima registrazione, +T cambia lo stile della card, +Q chiude.
+   [llm] non disponibile (<urlopen error [Errno 61] Connection refused>) — uso le regole
+[live] modello locale pronto in 3.2s (precaricato)
+[tasti] tap attivo: Fn o Ctrl+Option per dettare
+   [caret] prewarm ax=True
+[mac] loop principale avviato (Tk, radice nascosta)
+[live-local] modello nemotron pronto in 0.0s (sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-320ms-int8-2026-06-11)
+
+=== REC — target: 'TextEdit' | mic: 'Apple Virtual Sound Device' ===
+   [caret] ax-bounds -> (200, 242, 1, 14) in 7 ms
+   [panel] aperto stile=signal scala=1.00 dpi=96 caret=(200, 242, 1, 14) font=Geist Regular box=(180, 63, 232, True, None)
+   audio 8.1s @ 48000Hz | rms 0.1213 gain x1.0 picco 0.2405
+   [small/en] 12.65s | 'Hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?'
+   [llm] non disponibile (<urlopen error [Errno 61] Connection refused>) — uso le regole
+   [fmt] incollo il dettato com'e': tutte le parole ci sono, la pulizia no
+   [insert] accodato (12.66s)
+   [mac] app 19791 chiusa: niente incolla, testo lasciato negli appunti
+uscita.
+multiprocessing/resource_tracker.py:147: UserWarning: resource_tracker: process died unexpectedly, relaunching.  Some resources might leak.
+gia' in esecuzione — esco (single instance).
