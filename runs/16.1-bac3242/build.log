@@ -1,0 +1,130 @@
+Wavetype 0.2.0 | macOS 15.7.9 arm64 | python: /Users/runner/hostedtoolcache/Python/3.12.10/arm64/bin/python
+
+== venv (/Users/runner/work/wavetype/wavetype/build/mac/venv)
+python 3.12.10 arm64 | framework: True
+tk 8.6
+
+== icon
+
+== PyInstaller
+63 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.8
+64 INFO: Python: 3.12.10
+96 INFO: Platform: macOS-15.7.9-arm64-arm-64bit
+97 INFO: Python environment: /Users/runner/work/wavetype/wavetype/build/mac/venv
+101 INFO: Removing temporary files and cleaning cache in /Users/runner/Library/Application Support/pyinstaller
+2397 INFO: Module search paths (PYTHONPATH):
+['/Users/runner/work/wavetype/wavetype',
+ '/Library/Frameworks/Python.framework/Versions/3.12/lib/python312.zip',
+ '/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12',
+ '/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/lib-dynload',
+ '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages',
+ '/Users/runner/work/wavetype/wavetype']
+2787 INFO: Appending 'binaries' from .spec
+2787 INFO: Appending 'datas' from .spec
+2788 INFO: checking Analysis
+2788 INFO: Building Analysis because Analysis-00.toc is non existent
+2788 INFO: Looking for Python shared library...
+2794 INFO: Using Python shared library: /Library/Frameworks/Python.framework/Versions/3.12/Python
+2794 INFO: Running Analysis Analysis-00.toc
+2795 INFO: Target bytecode optimization level: 0
+2795 INFO: Initializing module dependency graph...
+2796 INFO: Initializing module graph hook caches...
+2805 INFO: Analyzing modules for base_library.zip ...
+3561 INFO: Processing standard module hook 'hook-encodings.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+3869 INFO: Processing standard module hook 'hook-math.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+4881 INFO: Processing standard module hook 'hook-pickle.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+5673 INFO: Processing standard module hook 'hook-heapq.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+6006 INFO: Caching module dependency graph...
+6036 INFO: Analyzing /Users/runner/work/wavetype/wavetype/wavetype.py
+6156 INFO: Processing standard module hook 'hook-platform.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+6176 INFO: Processing standard module hook 'hook-xml.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+6581 INFO: Processing standard module hook 'hook-certifi.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+6702 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+6924 INFO: Processing standard module hook 'hook-_ctypes.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+7203 INFO: Processing standard module hook 'hook-anyio.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+7414 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks/pre_safe_import_module'
+7414 INFO: SetuptoolsInfo: initializing cached setuptools info...
+8495 INFO: Processing standard module hook 'hook-difflib.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+8574 INFO: Processing standard module hook 'hook-webbrowser.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+8591 INFO: Processing pre-find-module-path hook 'hook-tkinter.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks/pre_find_module_path'
+8592 INFO: TclTkInfo: initializing cached Tcl/Tk info...
+8835 INFO: Processing standard module hook 'hook-_tkinter.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+8840 INFO: Processing standard module hook 'hook-PIL.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+8905 INFO: Processing standard module hook 'hook-PIL.Image.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+9088 INFO: Processing standard module hook 'hook-numpy.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+9687 INFO: Processing standard module hook 'hook-sysconfig.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+9696 INFO: Processing standard module hook 'hook-_osx_support.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+11206 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+11364 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+11597 INFO: Processing standard module hook 'hook-sounddevice.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+13484 INFO: Processing standard module hook 'hook-av.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+14727 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks/pre_safe_import_module'
+14973 INFO: Processing standard module hook 'hook-sqlite3.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+16665 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks/pre_safe_import_module'
+16727 INFO: Processing standard module hook 'hook-fsspec.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+17111 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks/pre_safe_import_module'
+17112 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.backports'!
+17243 INFO: Processing standard module hook 'hook-onnxruntime.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/_pyinstaller_hooks_contrib/stdhooks'
+17297 INFO: Processing pre-safe-import-module hook 'hook-tensorflow.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/_pyinstaller_hooks_contrib/pre_safe_import_module'
+17352 INFO: Analyzing hidden import 'live_dual'
+17361 INFO: Analyzing hidden import 'objc._machsignals'
+17361 INFO: Analyzing hidden import 'objc.simd'
+17371 INFO: Analyzing hidden import 'sherpa_onnx._info'
+17372 INFO: Processing module hooks (post-graph stage)...
+17890 INFO: Processing standard module hook 'hook-_tkinter.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+18189 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks'
+18271 INFO: Performing binary vs. data reclassification (353 entries)
+18434 INFO: Looking for ctypes DLLs
+18473 WARNING: Ignoring /System/Library/Frameworks/CoreFoundation.framework/CoreFoundation imported from /Users/runner/work/wavetype/wavetype/mac_sys.py - only basenames are supported with ctypes imports!
+18474 WARNING: Ignoring /System/Library/Frameworks/Carbon.framework/Carbon imported from /Users/runner/work/wavetype/wavetype/mac_sys.py - only basenames are supported with ctypes imports!
+18485 WARNING: Library gdi32 required via ctypes not found
+18485 WARNING: Library user32 required via ctypes not found
+18491 WARNING: Library ntdll required via ctypes not found
+18529 INFO: Analyzing run-time hooks ...
+18534 INFO: Including run-time hook 'pyi_rth_inspect.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+18536 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+18537 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+18539 INFO: Including run-time hook 'pyi_rth__tkinter.py' from '/Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/hooks/rthooks'
+18559 INFO: Creating base_library.zip...
+18573 INFO: Looking for dynamic libraries
+19610 INFO: Warnings written to /Users/runner/work/wavetype/wavetype/build/mac/pyi/wavetype-mac/warn-wavetype-mac.txt
+19650 INFO: Graph cross-reference written to /Users/runner/work/wavetype/wavetype/build/mac/pyi/wavetype-mac/xref-wavetype-mac.html
+19967 INFO: checking PYZ
+19967 INFO: Building PYZ because PYZ-00.toc is non existent
+19967 INFO: Building PYZ (ZlibArchive) /Users/runner/work/wavetype/wavetype/build/mac/pyi/wavetype-mac/PYZ-00.pyz
+21021 INFO: Building PYZ (ZlibArchive) /Users/runner/work/wavetype/wavetype/build/mac/pyi/wavetype-mac/PYZ-00.pyz completed successfully.
+21042 INFO: EXE target arch: arm64
+21042 INFO: Code signing identity: None
+21045 INFO: checking PKG
+21045 INFO: Building PKG because PKG-00.toc is non existent
+21045 INFO: Building PKG (CArchive) Wavetype.pkg
+21139 INFO: Building PKG (CArchive) Wavetype.pkg completed successfully.
+21141 INFO: Bootloader /Users/runner/work/wavetype/wavetype/build/mac/venv/lib/python3.12/site-packages/PyInstaller/bootloader/Darwin-64bit/runw
+21141 INFO: checking EXE
+21141 INFO: Building EXE because EXE-00.toc is non existent
+21141 INFO: Building EXE from EXE-00.toc
+21141 INFO: Copying bootloader EXE to /Users/runner/work/wavetype/wavetype/build/mac/pyi/wavetype-mac/Wavetype
+21143 INFO: Converting EXE to target arch (arm64)
+22884 INFO: Removing signature(s) from EXE
+22924 INFO: Modifying Mach-O image UUID(s) in EXE
+22934 INFO: Appending PKG archive to EXE
+22939 INFO: Fixing EXE headers for code signing
+22968 INFO: Rewriting the executable's macOS SDK version (26.2.0) to match the SDK version of the Python library (12.1.0) in order to avoid inconsistent behavior and potential UI issues in the frozen application.
+22969 INFO: Re-signing the EXE
+23018 INFO: Building EXE from EXE-00.toc completed successfully.
+23028 INFO: checking COLLECT
+23029 INFO: Building COLLECT because COLLECT-00.toc is non existent
+23029 INFO: Building COLLECT COLLECT-00.toc
+36851 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+36865 INFO: checking BUNDLE
+36866 INFO: Building BUNDLE because BUNDLE-00.toc is non existent
+36866 INFO: Building BUNDLE BUNDLE-00.toc
+43701 INFO: Signing the BUNDLE...
+44466 INFO: Building BUNDLE BUNDLE-00.toc completed successfully.
+44474 INFO: Build complete! The results are available in: /Users/runner/work/wavetype/wavetype/dist
+
+== secret check
+   ok: no user files, no gsk_ key pattern. Wavetype.app = 237M
+
+== done (app)
+app: /Users/runner/work/wavetype/wavetype/dist/Wavetype.app

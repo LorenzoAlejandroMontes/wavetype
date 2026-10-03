@@ -1,0 +1,63 @@
+{"t": 1791046899.1553311, "ev": "ready"}
+{"t": 1791046901.6965199, "ev": "hotkey", "what": "start"}
+{"t": 1791046901.81568, "ev": "rec_start"}
+{"t": 1791046901.8174238, "ev": "caret", "rect": [113, 155, 1, 14], "source": "ax-bounds"}
+{"t": 1791046901.846207, "ev": "context", "before": ""}
+{"t": 1791046902.0556002, "ev": "card", "x": 45, "y": 133, "w": 394, "h": 136, "phase": "listening"}
+{"t": 1791046902.057143, "ev": "live", "chars": 0, "text": "", "phase": "listening"}
+{"t": 1791046902.3713138, "ev": "card", "x": 45, "y": 133, "w": 456, "h": 152, "phase": "live"}
+{"t": 1791046902.878046, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046903.404633, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046903.910222, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046904.431537, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046905.041767, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046905.560832, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046906.1108758, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046906.629893, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046907.153955, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046907.694218, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046907.802432, "ev": "live", "chars": 30, "text": "Hello Sarah, the meeting moved", "phase": "live"}
+{"t": 1791046908.248061, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046908.828681, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046908.942137, "ev": "live", "chars": 42, "text": "Hello Sarah, the meeting moved to Thursday", "phase": "live"}
+{"t": 1791046909.3903081, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046909.9108338, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046910.444057, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046910.968531, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "live"}
+{"t": 1791046911.263333, "ev": "hotkey", "what": "stop"}
+{"t": 1791046911.26428, "ev": "rec_stop", "secs": 9.521}
+{"t": 1791046911.308753, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046911.8656058, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046912.421571, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046913.0103092, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046913.587841, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046914.12664, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046914.6541529, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046915.177472, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046915.7028182, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046916.245281, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046916.825889, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046917.359636, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046917.87641, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046918.392821, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046918.9010408, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046919.4270751, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046919.9445, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046920.476063, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046920.9841769, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046921.501288, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046922.009575, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046922.542924, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046923.043403, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046923.554823, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046924.059227, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046924.576302, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046925.175966, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046925.692599, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046926.201637, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046926.709953, "ev": "card", "x": 45, "y": 133, "w": 576, "h": 182, "phase": "formatting"}
+{"t": 1791046927.0798862, "ev": "transcript", "engine": "local", "chars": 74}
+{"t": 1791046927.4031382, "ev": "pasted", "chars": 74, "text": "Hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?"}
+{"t": 1791046927.571548, "ev": "card", "x": 45, "y": 133, "w": 609, "h": 182, "phase": "inserted"}
+{"t": 1791046927.601758, "ev": "live", "chars": 74, "text": "Hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?", "phase": "inserted"}
+{"t": 1791046928.132233, "ev": "card", "x": 378, "y": 133, "w": 276, "h": 132, "phase": "inserted"}
