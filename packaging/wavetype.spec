@@ -35,9 +35,14 @@ if not WITH_LOCAL:
 
 # sherpa-onnx has no PyInstaller hook: its extension (_sherpa_onnx.pyd) loads onnxruntime.dll and
 # the sherpa-onnx C API dlls from its own sherpa_onnx/lib folder. Ship them there, same layout.
-from PyInstaller.utils.hooks import collect_dynamic_libs, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 binaries = collect_dynamic_libs("sherpa_onnx")
+# faster-whisper has no PyInstaller hook either: the offline engine runs with vad_filter=True, which
+# loads faster_whisper/assets/silero_vad*.onnx from the package folder. Without it the fallback
+# fails in the built exe.
+if WITH_LOCAL:
+    datas += collect_data_files("faster_whisper")
 hidden_sherpa = collect_submodules("sherpa_onnx", filter=lambda m: not m.endswith((".cli", ".__main__")))
 
 a = Analysis(

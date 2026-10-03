@@ -120,6 +120,45 @@ def test_groq_accetta_la_vera_e_rifiuta_la_finta():
     assert first_run.validate_key("gsk_" + "Z" * 52)[0] == "invalid"
 
 
+def _spec_datas(with_local):
+    """Esegue packaging/wavetype.spec con Analysis finta: i datas che finirebbero nel pacchetto."""
+    seen = {}
+
+    def analysis(*a, **kw):
+        seen.update(kw)
+        return type("A", (), {"pure": [], "scripts": [], "binaries": [], "datas": []})()
+
+    spec = os.path.join(ROOT, "packaging", "wavetype.spec")
+    g = {"SPECPATH": os.path.dirname(spec), "Analysis": analysis,
+         "PYZ": lambda *a, **k: None, "EXE": lambda *a, **k: None, "COLLECT": lambda *a, **k: None}
+    old = os.environ.pop("WAVETYPE_WITH_LOCAL", None)
+    if with_local:
+        os.environ["WAVETYPE_WITH_LOCAL"] = "1"
+    try:
+        exec(compile(open(spec, encoding="utf-8").read(), spec, "exec"), g)
+    finally:
+        os.environ.pop("WAVETYPE_WITH_LOCAL", None)
+        if old is not None:
+            os.environ["WAVETYPE_WITH_LOCAL"] = old
+    return seen["datas"]
+
+
+@case
+def test_spec_withlocal_porta_il_vad():
+    # vad_filter=True carica faster_whisper/assets/silero_vad*.onnx: senza, il fallback offline
+    # dell'exe -WithLocal si rompe. Nessun hook di PyInstaller lo raccoglie da solo.
+    try:
+        import PyInstaller  # noqa: F401
+        import faster_whisper  # noqa: F401
+    except ImportError as e:
+        print(f"     ({e.name} non installato: salto)")
+        return
+    vad = [(s, d) for s, d in _spec_datas(True) if os.path.basename(s).startswith("silero_vad")]
+    assert vad, "silero_vad*.onnx non e' nei datas con WAVETYPE_WITH_LOCAL=1"
+    assert all(d.replace("\\", "/") == "faster_whisper/assets" for _, d in vad), vad
+    assert not [s for s, _ in _spec_datas(False) if "faster_whisper" in s], "senza -WithLocal"
+
+
 if __name__ == "__main__":
     ok = sum(1 for _, e in RESULTS if e is None)
     print(f"{ok}/{len(RESULTS)} ok")

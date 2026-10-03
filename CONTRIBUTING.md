@@ -45,6 +45,8 @@ user file and no `gsk_` key made it in, then Inno Setup 6 (`winget install JRSof
 turns it into `dist\Wavetype-Setup.exe` (the version lives inside the installer, not in its name). Without Inno Setup you get a zip instead.
 To try a build without pressing the global hotkeys, `Wavetype.exe --smoke-test 10` starts
 everything except the hotkeys and quits after 10 seconds (see `wavetype.log`).
+In a `-WithLocal` build it also runs the offline engine (VAD included) and logs `[smoke] locale ok`;
+add `--smoke-wav some.wav` to give it real speech instead of a test tone.
 `Wavetype.exe --setup` opens the key window again.
 
 ## Things that would genuinely help

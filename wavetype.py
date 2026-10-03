@@ -1614,10 +1614,7 @@ def stt(wav_path, a16, t0):
             log(f"   [groq stt] fallback locale: {e}")
             testhooks.emit("error", where="groq_stt", msg=str(e)[:200])
     if not text and model is not None:
-        segs, info = model.transcribe(wav_path, language=LANG, vad_filter=True, beam_size=BEAM,
-                                      without_timestamps=True, condition_on_previous_text=False)
-        text = " ".join(s.text for s in segs).strip()
-        lang = info.language
+        text, lang = local_transcribe(wav_path)
         log(f"   [{MODEL}/{lang}] {time.perf_counter()-t0:.2f}s | '{text}'")
         testhooks.emit("transcript", engine="local", chars=len(text))
     elif not text:
@@ -1625,6 +1622,14 @@ def stt(wav_path, a16, t0):
             f"L'audio resta in {REC_DIR}: Win+Ctrl+R per riprovare.")
     _stt_net.failed = groq_err and not text
     return text, lang
+
+
+def local_transcribe(wav_path):
+    """Motore offline: (testo, lingua). Unica chiamata, cosi' --smoke-test prova la stessa del
+    fallback (il filtro VAD carica silero_vad*.onnx dal pacchetto faster_whisper)."""
+    segs, info = model.transcribe(wav_path, language=LANG, vad_filter=True, beam_size=BEAM,
+                                  without_timestamps=True, condition_on_previous_text=False)
+    return " ".join(s.text for s in segs).strip(), info.language
 
 
 def edit_instruction(text, chip=None):
@@ -2860,6 +2865,23 @@ def smoke_checks():
         log(f"[smoke] flac ok: {SR * 2} byte di WAV -> {len(blob)} byte")
     except Exception as e:
         log(f"[smoke] flac ko: {e}")
+    if model is not None:           # motore offline (build -WithLocal): VAD + modello, davvero
+        wav = _arg_value("--smoke-wav")
+        p = wav or paths.state("_smoke_local.wav")
+        try:
+            if not wav:
+                save_wav(p, a, SR)  # tono puro: il VAD lo scarta, testo vuoto ma VAD caricato
+            t0 = time.perf_counter()
+            text, lang = local_transcribe(p)
+            log(f"[smoke] locale ok ({MODEL}/{lang}, {time.perf_counter()-t0:.1f}s) | '{text}'")
+        except Exception as e:
+            log(f"[smoke] locale ko: {type(e).__name__}: {e}")
+        finally:
+            if not wav:
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
     if not USE_GROQ:
         return
     p = paths.state("_smoke.wav")
