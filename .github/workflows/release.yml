@@ -73,6 +73,15 @@ jobs:
           if (-not (Select-String -Path $log -Pattern 'PRONTO' -Quiet)) { throw "the app never got to PRONTO" }
           if (-not (Select-String -Path $log -Pattern '\[smoke\] flac ok' -Quiet)) { throw "FLAC encoding did not work in the installed app" }
 
+      - name: Keep the installed app's log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-log
+          path: ~/AppData/Local/Wavetype/*.log
+          if-no-files-found: warn
+          retention-days: 14
+
       - uses: actions/upload-artifact@v7
         with:
           name: Wavetype-Setup
