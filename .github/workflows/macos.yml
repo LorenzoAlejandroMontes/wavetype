@@ -10,7 +10,9 @@ name: macOS build and test
 
 on:
   push:
-    branches: [macos]
+    # macos-release: same job, but the app and the .dmg get the Developer ID signature through
+    # rcodesign remote signing (packaging/mac/ci/remote_sign.sh) and Apple's notarization ticket
+    branches: [macos, macos-release]
   workflow_dispatch:
     inputs:
       hardened:
@@ -54,7 +56,7 @@ jobs:
 
       - name: Sign and DMG
         id: sign
-        if: steps.build.outcome == 'success'
+        if: steps.build.outcome == 'success' && github.ref_name != 'macos-release'
         continue-on-error: true
         env:
           WAVETYPE_HARDENED: ${{ inputs.hardened || '1' }}
@@ -83,6 +85,90 @@ jobs:
               sys.stdout.write(line)
           ' | tee "$RESULTS/sign.log"
 
+      # ---- macos-release only: Developer ID + notarization, no secret on the runner -------------
+      # Each "start" opens a signing session and uploads its join string; the owner's machine joins
+      # it, signs, and submits to Apple's notary; the runner waits for the ticket and staples it.
+      - name: "Release: start signing the app"
+        id: rel_app_start
+        if: steps.build.outcome == 'success' && github.ref_name == 'macos-release'
+        run: |
+          bash packaging/mac/ci/remote_sign.sh tool
+          bash packaging/mac/ci/remote_sign.sh start app
+
+      - name: "Release: join string (app)"
+        if: steps.rel_app_start.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: sjs-app
+          path: build/mac/remote/sjs-app.txt
+          retention-days: 1
+
+      - name: "Release: app signed, image for the notary"
+        id: rel_app_signed
+        if: steps.rel_app_start.outcome == 'success'
+        run: |
+          set -o pipefail
+          bash packaging/mac/ci/remote_sign.sh wait app 2>&1 | tee "$RESULTS/sign.log"
+          hdiutil create -volname "Wavetype" -srcfolder dist/Wavetype.app -ov -fs HFS+ -format UDZO build/mac/remote/notarize-app.dmg
+
+      - name: "Release: to the notary (app)"
+        if: steps.rel_app_signed.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: notarize-app
+          path: build/mac/remote/notarize-app.dmg
+          compression-level: 0
+          retention-days: 1
+
+      - name: "Release: staple the app, build the .dmg, start signing it"
+        id: rel_dmg_start
+        if: steps.rel_app_signed.outcome == 'success'
+        run: |
+          set -o pipefail
+          {
+            bash packaging/mac/ci/remote_sign.sh staple dist/Wavetype.app
+            bash packaging/mac/build.sh dmg
+            bash packaging/mac/ci/remote_sign.sh start dmg
+          } 2>&1 | tee -a "$RESULTS/sign.log"
+
+      - name: "Release: join string (dmg)"
+        if: steps.rel_dmg_start.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: sjs-dmg
+          path: build/mac/remote/sjs-dmg.txt
+          retention-days: 1
+
+      - name: "Release: dmg signed"
+        id: rel_dmg_signed
+        if: steps.rel_dmg_start.outcome == 'success'
+        run: |
+          set -o pipefail
+          bash packaging/mac/ci/remote_sign.sh wait dmg 2>&1 | tee -a "$RESULTS/sign.log"
+
+      - name: "Release: to the notary (dmg)"
+        if: steps.rel_dmg_signed.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: notarize-dmg
+          path: dist/*.dmg
+          compression-level: 0
+          retention-days: 1
+
+      - name: "Release: staple the dmg, Gatekeeper's verdict"
+        id: rel_done
+        if: steps.rel_dmg_signed.outcome == 'success'
+        run: |
+          set -o pipefail
+          {
+            DMG="$(ls dist/Wavetype-*-arm64.dmg | head -1)"
+            bash packaging/mac/ci/remote_sign.sh staple "$DMG"
+            echo "== spctl (app)"; spctl -a -vv dist/Wavetype.app
+            echo "== spctl (dmg)"; spctl -a -t open --context context:primary-signature -vv "$DMG"
+            echo "== stapler validate (app)"; xcrun stapler validate dist/Wavetype.app
+            echo "== sha256"; shasum -a 256 "$DMG"
+          } 2>&1 | tee -a "$RESULTS/sign.log"
+
       - name: Machine facts (macOS, SIP, audio, TCC grants)
         if: always()
         run: |
@@ -92,7 +178,7 @@ jobs:
             echo "## csrutil status"; csrutil status
             echo "## python"; python -VV; python -c "import tkinter; print('tk', tkinter.TkVersion)"
             echo "## displays"; system_profiler SPDisplaysDataType
-            echo "## build step outcome: ${{ steps.build.outcome }} | sign: ${{ steps.sign.outcome }}"
+            echo "## build step outcome: ${{ steps.build.outcome }} | sign: ${{ steps.sign.outcome }} | release: ${{ steps.rel_done.outcome }}"
           } > "$RESULTS/env.txt" 2>&1 || true
           system_profiler SPAudioDataType > "$RESULTS/audio.txt" 2>&1 || true
           # who may tap keys, post events, record the screen and use the microphone on this runner
@@ -188,6 +274,41 @@ jobs:
             python -m pip install -q pyobjc-framework-Quartz pyobjc-framework-ApplicationServices || true
           fi
           "$PY" packaging/mac/ci/e2e.py e2e
+
+      # What a person gets: the .dmg as a browser leaves it (quarantined), the app dragged to
+      # /Applications and opened with a double click. Gatekeeper decides here, with a screenshot of
+      # what it shows and of the app after "Open".
+      - name: "Release: first launch from a quarantined download"
+        if: always() && steps.rel_done.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          {
+            DMG="$(ls dist/Wavetype-*-arm64.dmg | head -1)"
+            pkill -x Wavetype || true
+            Q="0083;$(printf '%x' "$(date +%s)");Safari;$(uuidgen)"
+            mkdir -p "$HOME/Downloads"; DL="$HOME/Downloads/$(basename "$DMG")"
+            cp "$DMG" "$DL"; xattr -w com.apple.quarantine "$Q" "$DL"
+            hdiutil attach -nobrowse -readonly -mountpoint /tmp/wavetype-dmg "$DL"
+            ls -la /tmp/wavetype-dmg
+            rm -rf /Applications/Wavetype.app
+            ditto /tmp/wavetype-dmg/Wavetype.app /Applications/Wavetype.app
+            xattr -r -w com.apple.quarantine "$Q" /Applications/Wavetype.app
+            hdiutil detach /tmp/wavetype-dmg || true
+            echo "== quarantine: $(xattr -p com.apple.quarantine /Applications/Wavetype.app)"
+            echo "== spctl"; spctl -a -vv /Applications/Wavetype.app
+            echo "== syspolicy_check"; syspolicy_check distribution /Applications/Wavetype.app || true
+            open /Applications/Wavetype.app
+            sleep 10
+            screencapture -x "$RESULTS/shots/gatekeeper_1_after_open.png" || true
+            echo "== windows of CoreServicesUIAgent"
+            osascript -e 'tell application "System Events" to tell process "CoreServicesUIAgent" to get {name, description} of every UI element of every window' || true
+            osascript -e 'tell application "System Events" to tell process "CoreServicesUIAgent" to click button "Open" of window 1' || true
+            sleep 15
+            screencapture -x "$RESULTS/shots/gatekeeper_2_app_running.png" || true
+            echo "== process"; pgrep -lf "/Applications/Wavetype.app" || echo "Wavetype is NOT running"
+            pkill -x Wavetype || true
+          } 2>&1 | tee "$RESULTS/gatekeeper.log"
 
       - name: Summary
         if: always()

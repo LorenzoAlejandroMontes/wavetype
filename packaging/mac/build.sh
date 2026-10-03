@@ -5,6 +5,8 @@
 #   bash packaging/mac/build.sh          # everything (local Mac, Codemagic)
 #   bash packaging/mac/build.sh app      # venv + PyInstaller + secret check: needs no credentials
 #   bash packaging/mac/build.sh sign     # sign + DMG (+ notarize): runs no pip, no PyInstaller
+#   bash packaging/mac/build.sh dmg      # DMG only, from dist/Wavetype.app exactly as it is: the app was
+#                                        # signed elsewhere (ci/remote_sign.sh) and must not be re-signed
 #
 # CI runs the two halves as separate steps so the signing secrets never share an environment with
 # pip installs and PyInstaller imports of third-party packages.
@@ -36,7 +38,7 @@ APP="$ROOT/dist/Wavetype.app"
 ENT="$MAC/entitlements.plist"
 PYTHON="${PYTHON:-python3}"
 PHASE="${1:-all}"
-case "$PHASE" in all|app|sign) ;; *) echo "usage: build.sh [all|app|sign]"; exit 2;; esac
+case "$PHASE" in all|app|sign|dmg) ;; *) echo "usage: build.sh [all|app|sign|dmg]"; exit 2;; esac
 HARDENED="${WAVETYPE_HARDENED:-1}"
 export WAVETYPE_WITH_LOCAL="${WAVETYPE_WITH_LOCAL:-1}"
 mkdir -p "$WORK" "$ROOT/dist"
@@ -57,7 +59,7 @@ VERSION="$(sed -nE "s/.*StringStruct\('ProductVersion', *'([0-9.]+)'\).*/\1/p" p
 DMG="$ROOT/dist/Wavetype-$VERSION-arm64.dmg"
 echo "Wavetype $VERSION | macOS $(sw_vers -productVersion) $(uname -m) | python: $PYTHON"
 
-if [ "$PHASE" != sign ]; then
+if [ "$PHASE" != sign ] && [ "$PHASE" != dmg ]; then
 # 1. build environment
 step "venv ($WORK/venv)"
 "$PYTHON" - <<'EOF'
@@ -110,9 +112,11 @@ fi
 [ "$PHASE" = app ] && { step "done (app)"; echo "app: $APP"; exit 0; }
 [ -x "$APP/Contents/MacOS/Wavetype" ] || { echo "no $APP: run build.sh app first"; exit 1; }
 
+IDENTITY=""
+NOTARIZE=0
+if [ "$PHASE" != dmg ]; then
 # 5. signing identity (optional), after PyInstaller, which always signs ad-hoc: step 6 re-signs
 # every binary anyway, and the credentials stay out of the build half.
-IDENTITY=""
 if [ -n "${DEVID_P12_BASE64:-}" ]; then
     step "importing the Developer ID certificate into a throwaway keychain"
     KEYCHAIN="$WORK/signing.keychain-db"
@@ -175,7 +179,6 @@ notarize() {   # $1 = file to submit (.zip or .dmg)
     fi
 }
 
-NOTARIZE=0
 if [ -n "$IDENTITY" ] && [ -n "${APP_STORE_CONNECT_PRIVATE_KEY:-}" ] \
    && [ -n "${APP_STORE_CONNECT_KEY_IDENTIFIER:-}" ] && [ -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
     NOTARIZE=1
@@ -193,6 +196,7 @@ fi
 if [ "${WAVETYPE_REQUIRE_NOTARIZATION:-0}" = "1" ] && [ "$NOTARIZE" != "1" ]; then
     echo "WAVETYPE_REQUIRE_NOTARIZATION=1 but identity or App Store Connect key missing"
     exit 1
+fi
 fi
 
 # 7. DMG: the app + a link to /Applications (drag to install)
@@ -222,4 +226,8 @@ fi
 step "done"
 echo "app: $APP ($(du -sh "$APP" | cut -f1))"
 echo "dmg: $DMG ($(du -h "$DMG" | cut -f1))"
-echo "signature: ${IDENTITY:-ad-hoc} | hardened runtime: $HARDENED | notarized: $NOTARIZE"
+if [ "$PHASE" = dmg ]; then
+    echo "signature: the app as found, the DMG unsigned"
+else
+    echo "signature: ${IDENTITY:-ad-hoc} | hardened runtime: $HARDENED | notarized: $NOTARIZE"
+fi
