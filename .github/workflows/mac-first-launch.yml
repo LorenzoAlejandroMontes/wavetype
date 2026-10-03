@@ -82,8 +82,8 @@ jobs:
             sleep 25
             screencapture -x "$RESULTS/shots/gatekeeper_3_app_running.png"
             echo "== open said: $(cat "$RESULTS/logs/gatekeeper_open.txt" 2>/dev/null)"
-            echo "== process"; pgrep -lf "/Applications/Wavetype.app" || echo "Wavetype is NOT running"
-            pgrep -f "/Applications/Wavetype.app/Contents/MacOS/Wavetype" > /dev/null; echo "$?" > "$RESULTS/app_running.exit"
+            echo "== process"; pgrep -lx Wavetype || echo "Wavetype is NOT running"; ps -axo pid,comm | grep -i wavetype
+            pgrep -x Wavetype > /dev/null; echo "$?" > "$RESULTS/app_running.exit"
             for f in "$HOME/Library/Application Support/Wavetype/wavetype.log" "$HOME/Library/Application Support/Wavetype/crash.log"; do
               [ -f "$f" ] && cp "$f" "$RESULTS/logs/$(basename "$f")"
             done

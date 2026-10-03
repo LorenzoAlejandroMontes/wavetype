@@ -9,6 +9,8 @@ name: Release
 on:
   push:
     tags: ['v*']
+    # dry run of the Windows build only: no release is created from a branch
+    branches: ['release-test*']
 
 permissions:
   contents: read
@@ -29,10 +31,11 @@ jobs:
       - name: The tag is the version in the build
         shell: bash
         run: |
-          V="${GITHUB_REF_NAME#v}"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then V="${GITHUB_REF_NAME#v}"; else V="$(sed -n 's/^ *#define AppVersion "\(.*\)".*/\1/p' packaging/wavetype.iss | tr -d '\r')"; fi
+          echo "version $V"; echo "V=$V" >> "$GITHUB_ENV"
           grep -q "StringStruct('ProductVersion', '$V')" packaging/version_info.txt
           grep -q "#define AppVersion \"$V\"" packaging/wavetype.iss
-          test -f "docs/releases/$GITHUB_REF_NAME.md"
+          test -f "docs/releases/v$V.md"
 
       - name: Inno Setup
         shell: pwsh
@@ -43,7 +46,7 @@ jobs:
       - name: Build the installer
         shell: pwsh
         run: |
-          powershell -ExecutionPolicy Bypass -File packaging\build.ps1 -Version "$($env:GITHUB_REF_NAME.TrimStart('v'))"
+          powershell -ExecutionPolicy Bypass -File packaging\build.ps1 -Version "$env:V"
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Get-FileHash dist\Wavetype-Setup.exe -Algorithm SHA256 | Format-List
 
@@ -58,6 +61,7 @@ jobs:
   release:
     # the only job with a write token: no pip, no PyInstaller, just the two files and gh
     needs: windows
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
