@@ -1,0 +1,54 @@
+== [15:31:06] hdiutil attach -nobrowse -readonly -mountpoint /tmp/wavetype-dmg /Users/runner/Downloads/Wavetype-0.2.0-arm64.dmg
+Checksumming Protective Master Boot Record (MBR : 0)…
+Protective Master Boot Record (MBR :: verified   CRC32 $A1894F6C
+Checksumming GPT Header (Primary GPT Header : 1)…
+ GPT Header (Primary GPT Header : 1): verified   CRC32 $33DE4D6A
+Checksumming GPT Partition Data (Primary GPT Table : 2)…
+GPT Partition Data (Primary GPT Tabl: verified   CRC32 $00B8C541
+Checksumming  (Apple_Free : 3)…
+                    (Apple_Free : 3): verified   CRC32 $00000000
+Checksumming disk image (Apple_HFS : 4)…
+          disk image (Apple_HFS : 4): verified   CRC32 $5E857F1F
+Checksumming  (Apple_Free : 5)…
+                    (Apple_Free : 5): verified   CRC32 $00000000
+Checksumming GPT Partition Data (Backup GPT Table : 6)…
+GPT Partition Data (Backup GPT Table: verified   CRC32 $00B8C541
+Checksumming GPT Header (Backup GPT Header : 7)…
+  GPT Header (Backup GPT Header : 7): verified   CRC32 $221579D8
+verified   CRC32 $0DD4902F
+/dev/disk5          	GUID_partition_scheme          	
+/dev/disk5s1        	Apple_HFS                      	/private/tmp/wavetype-dmg
+== rc=0
+total 8
+drwxr-xr-x  4 runner  staff  204 Oct  3 15:18 .
+drwxrwxrwt  5 root    wheel  160 Oct  3 15:31 ..
+lrwxr-xr-x  1 runner  staff   13 Oct  3 15:18 Applications -> /Applications
+drwxr-xr-x  3 runner  staff  102 Oct  3 15:05 Wavetype.app
+== [15:31:09] ditto /tmp/wavetype-dmg/Wavetype.app /Applications/Wavetype.app
+== rc=0
+== [15:31:11] hdiutil detach /tmp/wavetype-dmg
+"disk5" ejected.
+== rc=0
+== quarantine: 0083;6ac11fba;Safari;A1484A5A-734E-4251-A479-5B8F18CF4FE9
+== [15:31:11] spctl -a -vv /Applications/Wavetype.app
+/Applications/Wavetype.app: accepted
+source=Notarized Developer ID
+origin=Developer ID Application: Lorenzo Alejandro Montes (3B9R733FPA)
+== rc=0
+== [15:31:12] syspolicy_check distribution /Applications/Wavetype.app
+App passed all pre-distribution checks and is ready for distribution.
+== rc=0
+== [15:31:15] open /Applications/Wavetype.app (background)
+== process before the click
+42432 open /Applications/Wavetype.app
+== windows of CoreServicesUIAgent
+== [15:31:27] osascript -e tell application "System Events" to tell process "CoreServicesUIAgent" to get {role, name, description} of entire contents of every window
+78:103: execution error: System Events got an error: Can’t make role of entire contents of every window of process "CoreServicesUIAgent" into type specifier. (-1700)
+== rc=1
+== [15:31:27] osascript packaging/mac/ci/gatekeeper_open.applescript
+window found, no Open button
+== rc=0
+== open said: 
+== process
+42432 open /Applications/Wavetype.app
+== done

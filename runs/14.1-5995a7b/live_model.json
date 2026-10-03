@@ -1,0 +1,7 @@
+{
+  "present": true,
+  "dir": "/Users/runner/Library/Application Support/Wavetype/models",
+  "name": "sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-320ms-int8-2026-06-11",
+  "cache_hit": false,
+  "secs": 34
+}
