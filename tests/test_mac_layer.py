@@ -996,6 +996,17 @@ W.stop_and_process = fake_stop
 W.chord_recover = lambda: (calls.append("recover"), fake_stop() if W.rec["held"] else None)
 W.chord_style = lambda: calls.append("style")
 W.live_end = lambda *a, **k: None
+# quanto il sistema allunga gli sleep (probe e worker): lo scenario e' a tempo reale, e su una
+# macchina carica un tocco da 0,10 s puo' durare piu' di HOLD_SEC e diventare un "tenuto"
+jitter = [0.0]
+_sleep = time.sleep
+
+def _sleep_misurato(sec):
+    t = time.perf_counter()
+    _sleep(sec)
+    jitter[0] = max(jitter[0], time.perf_counter() - t - sec)
+
+time.sleep = _sleep_misurato
 th = threading.Thread(target=W.worker_mac, daemon=True)
 th.start()
 S = K.STATE
@@ -1123,17 +1134,47 @@ out["quit_calls"] = names()
 out["quit_ev"] = hotkeys()
 th.join(1.0)
 out["alive"] = th.is_alive()
+out["jitter"] = round(jitter[0], 3)
 print("PROBE " + json.dumps(out))
 '''
 
 
+WORKER_TRIES = 3
+
+
 def test_worker_mac_vero_in_darwin():
-    code = "ROOT = " + repr(ROOT) + "\n" + WORKER_PROBE
+    """Il worker vero a tempo reale. Sul runner Mac e' caduto due volte su nove (run #4 e #9), ogni
+    volta su un assert diverso: credo sleep allungati dal carico. Un difetto vero cade a ogni giro,
+    quindi si riprova fino a WORKER_TRIES volte e si fallisce solo se cadono tutti; il messaggio
+    porta lo sleep piu' allungato di ogni giro (jitter), cosi' la prossima volta la causa si legge."""
+    bad = []
+    for _ in range(WORKER_TRIES):
+        try:
+            jit = _worker_mac_un_giro()
+        except AssertionError as ex:
+            bad.append(str(ex))
+            continue
+        if bad:
+            print(f"     test_worker_mac_vero_in_darwin: giri caduti prima di passare (jitter {jit}): {bad}")
+        return
+    raise AssertionError(f"{WORKER_TRIES} giri su {WORKER_TRIES} caduti: {bad}")
+
+
+def _worker_mac_un_giro():
+    code ="ROOT = " + repr(ROOT) + "\n" + WORKER_PROBE
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120,
                        cwd=ROOT)
     line = [ln for ln in r.stdout.splitlines() if ln.startswith("PROBE ")]
     assert line, f"probe senza esito (rc={r.returncode}): {r.stderr[-800:]}"
     out = json.loads(line[-1][6:])
+    try:
+        _worker_mac_controlli(out)
+    except AssertionError as ex:
+        raise AssertionError(f"{ex} [jitter {out.get('jitter')} s]")
+    return out.get("jitter")
+
+
+def _worker_mac_controlli(out):
     eq(out["fn_now"], ["start"], "Fn parte alla pressione, senza grazia")
     eq(out["tap_rec"], True, "dopo il tocco breve resta in ascolto")
     eq(out["tap"], ["start", "stop"], "tocco, tocco")
