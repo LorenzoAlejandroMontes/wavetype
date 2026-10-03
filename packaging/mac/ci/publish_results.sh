@@ -8,7 +8,7 @@ set -euo pipefail
 
 BRANCH="ci-mac-results"
 RESULTS="${RESULTS:-results}"
-RUN_DIR="runs/${GITHUB_RUN_NUMBER:-local}.${GITHUB_RUN_ATTEMPT:-1}-$(git rev-parse --short=7 HEAD)"
+RUN_DIR="${RUN_DIR:-runs/${GITHUB_RUN_NUMBER:-local}.${GITHUB_RUN_ATTEMPT:-1}-$(git rev-parse --short=7 HEAD)}"
 WT="$(mktemp -d)/results-worktree"
 
 [ -d "$RESULTS" ] || { echo "no $RESULTS folder: nothing to publish"; exit 0; }

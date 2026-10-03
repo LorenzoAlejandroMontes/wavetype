@@ -1,0 +1,129 @@
+# First launch of an already signed and notarized .dmg, as a person gets it: quarantined download,
+# app dragged to /Applications, double click, "Open" on Gatekeeper's question, screenshot of the app.
+# It takes the .dmg from the artifact of a finished signing run (no rebuild, no new signature), so
+# the file checked here is byte for byte the one that goes into the release.
+#
+# Least privilege: the mac job reads the repo and the artifact; the write token lives only in the
+# publish job on Linux, which runs nothing but git.
+name: macOS first launch of the signed dmg
+
+on:
+  push:
+    branches: ['mac-first-launch*']
+
+permissions:
+  contents: read
+
+env:
+  MAC_RUN_ID: "37133918396"
+  MAC_ARTIFACT: wavetype-mac-15.1
+  MAC_DMG_SHA256: b1da4bb4dd276eff7f72b060f3f93ef4a7bf94b4cedd864aebdda3b7812623eb
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    env:
+      RESULTS: ${{ github.workspace }}/results
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ env.MAC_ARTIFACT }}
+          run-id: ${{ env.MAC_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: signed
+
+      - name: The .dmg is the signed one
+        run: |
+          DMG="$(find signed -name 'Wavetype-*-arm64.dmg' | head -1)"
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
+          echo "$MAC_DMG_SHA256  $DMG" | shasum -a 256 -c -
+          mkdir -p "$RESULTS/shots" "$RESULTS/logs"
+
+      - name: Driver (Quartz, accessibility)
+        run: |
+          python3 -m venv build/drv
+          build/drv/bin/python -m pip install -q pyobjc-framework-Quartz pyobjc-framework-ApplicationServices
+          build/drv/bin/python packaging/mac/ci/keys.py preflight | tee "$RESULTS/driver_preflight.json"
+
+      - name: First launch from a quarantined download
+        timeout-minutes: 8
+        run: |
+          set +e
+          {
+            t() { local s="$1"; shift; echo "== [$(date +%T)] $*"; perl -e 'alarm shift; exec @ARGV' "$s" "$@"; local rc=$?; echo "== rc=$rc"; return $rc; }
+            sw_vers
+            Q="0083;$(printf '%x' "$(date +%s)");Safari;$(uuidgen)"
+            mkdir -p "$HOME/Downloads"; DL="$HOME/Downloads/$(basename "$DMG")"
+            cp "$DMG" "$DL"; xattr -w com.apple.quarantine "$Q" "$DL"
+            rm -rf /Applications/Wavetype.app
+            t 90 hdiutil attach -nobrowse -readonly -mountpoint /tmp/wavetype-dmg "$DL" || echo "== the quarantined dmg did NOT mount"
+            ls -la /tmp/wavetype-dmg
+            t 60 ditto /tmp/wavetype-dmg/Wavetype.app /Applications/Wavetype.app
+            t 30 hdiutil detach /tmp/wavetype-dmg
+            xattr -r -w com.apple.quarantine "$Q" /Applications/Wavetype.app
+            echo "== quarantine: $(xattr -p com.apple.quarantine /Applications/Wavetype.app)"
+            t 60 spctl -a -vv /Applications/Wavetype.app
+            # in the background: `open` does not return until the Gatekeeper question is answered
+            echo "== [$(date +%T)] open /Applications/Wavetype.app (background)"
+            ( perl -e 'alarm shift; exec @ARGV' 180 open /Applications/Wavetype.app > "$RESULTS/logs/gatekeeper_open.txt" 2>&1; echo "rc=$?" >> "$RESULTS/logs/gatekeeper_open.txt" ) &
+            sleep 12
+            screencapture -x "$RESULTS/shots/gatekeeper_1_after_open.png"
+            echo "== process before the click"; pgrep -lf "/Applications/Wavetype.app" || echo "Wavetype is not running yet"
+            t 90 build/drv/bin/python packaging/mac/ci/gatekeeper_click.py
+            echo "$?" > "$RESULTS/gatekeeper_click.exit"
+            sleep 5
+            screencapture -x "$RESULTS/shots/gatekeeper_2_after_click.png"
+            sleep 25
+            screencapture -x "$RESULTS/shots/gatekeeper_3_app_running.png"
+            echo "== open said: $(cat "$RESULTS/logs/gatekeeper_open.txt" 2>/dev/null)"
+            echo "== process"; pgrep -lf "/Applications/Wavetype.app" || echo "Wavetype is NOT running"
+            pgrep -f "/Applications/Wavetype.app/Contents/MacOS/Wavetype" > /dev/null; echo "$?" > "$RESULTS/app_running.exit"
+            for f in "$HOME/Library/Application Support/Wavetype/wavetype.log" "$HOME/Library/Application Support/Wavetype/crash.log"; do
+              [ -f "$f" ] && cp "$f" "$RESULTS/logs/$(basename "$f")"
+            done
+            pkill -x Wavetype
+            echo "== done"
+          } > "$RESULTS/gatekeeper.log" 2>&1
+          cat "$RESULTS/gatekeeper.log"
+          exit 0
+
+      - name: Upload results for the publish job
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: first-launch-${{ github.run_number }}.${{ github.run_attempt }}
+          path: results/
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Verdict
+        if: always()
+        run: |
+          echo "click: $(cat "$RESULTS/gatekeeper_click.exit")  app running (0 = yes): $(cat "$RESULTS/app_running.exit")"
+          [ "$(cat "$RESULTS/gatekeeper_click.exit")" = "0" ] && [ "$(cat "$RESULTS/app_running.exit")" = "0" ]
+
+  publish:
+    needs: mac
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: first-launch-${{ github.run_number }}.${{ github.run_attempt }}
+          path: results
+
+      - name: Publish results to ci-mac-results
+        env:
+          RUN_DIR: runs/first-launch-${{ github.run_number }}.${{ github.run_attempt }}-of-15.1
+        run: bash packaging/mac/ci/publish_results.sh
