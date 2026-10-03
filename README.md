@@ -280,7 +280,4 @@ pull request.
 
 MIT. See [LICENSE](LICENSE).
 
-## Credits
-
-Inspired by [freeflow](https://github.com/zachlatta/freeflow), the macOS equivalent.
 Fonts in `assets/fonts/` ship under the SIL Open Font License, see `assets/fonts/OFL.txt`.
