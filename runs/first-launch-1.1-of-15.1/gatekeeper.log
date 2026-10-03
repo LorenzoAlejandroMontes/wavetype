@@ -1,0 +1,55 @@
+ProductName:		macOS
+ProductVersion:		15.7.9
+BuildVersion:		24G830
+== [16:46:09] hdiutil attach -nobrowse -readonly -mountpoint /tmp/wavetype-dmg /Users/runner/Downloads/Wavetype-0.2.0-arm64.dmg
+Checksumming Protective Master Boot Record (MBR : 0)…
+Protective Master Boot Record (MBR :: verified   CRC32 $A1894F6C
+Checksumming GPT Header (Primary GPT Header : 1)…
+ GPT Header (Primary GPT Header : 1): verified   CRC32 $3A7F5740
+Checksumming GPT Partition Data (Primary GPT Table : 2)…
+GPT Partition Data (Primary GPT Tabl: verified   CRC32 $4B81C59C
+Checksumming  (Apple_Free : 3)…
+                    (Apple_Free : 3): verified   CRC32 $00000000
+Checksumming disk image (Apple_HFS : 4)…
+          disk image (Apple_HFS : 4): verified   CRC32 $5BEA3F08
+Checksumming  (Apple_Free : 5)…
+                    (Apple_Free : 5): verified   CRC32 $00000000
+Checksumming GPT Partition Data (Backup GPT Table : 6)…
+GPT Partition Data (Backup GPT Table: verified   CRC32 $4B81C59C
+Checksumming GPT Header (Backup GPT Header : 7)…
+  GPT Header (Backup GPT Header : 7): verified   CRC32 $2BB463F2
+verified   CRC32 $A8759C36
+/dev/disk5          	GUID_partition_scheme          	
+/dev/disk5s1        	Apple_HFS                      	/private/tmp/wavetype-dmg
+== rc=0
+total 8
+drwxr-xr-x  4 runner  staff  204 Oct  3 15:49 .
+drwxrwxrwt  5 root    wheel  160 Oct  3 16:46 ..
+lrwxr-xr-x  1 runner  staff   13 Oct  3 15:49 Applications -> /Applications
+drwxr-xr-x  3 runner  staff  102 Oct  3 15:38 Wavetype.app
+== [16:46:15] ditto /tmp/wavetype-dmg/Wavetype.app /Applications/Wavetype.app
+== rc=0
+== [16:46:16] hdiutil detach /tmp/wavetype-dmg
+"disk5" ejected.
+== rc=0
+== quarantine: 0083;6ac13151;Safari;73E8A39B-E8D2-4A7A-917C-37A4FEA973E1
+== [16:46:16] spctl -a -vv /Applications/Wavetype.app
+/Applications/Wavetype.app: accepted
+source=Notarized Developer ID
+origin=Developer ID Application: Lorenzo Alejandro Montes (3B9R733FPA)
+== rc=0
+== [16:46:18] open /Applications/Wavetype.app (background)
+== process before the click
+14304 open /Applications/Wavetype.app
+== [16:46:30] build/drv/bin/python packaging/mac/ci/gatekeeper_click.py
+windows of CoreServicesUIAgent: [{'pid': 345, 'layer': 8, 'x': 382.0, 'y': 130.0, 'w': 260.0, 'h': 264.0}]
+AXIsProcessTrusted: True
+ax windows: 1
+ax elements walked: 7; buttons: [('Help', (616.0, 156.0)), ('Cancel', (453.0, 364.0)), ('Open', (571.0, 364.0))]
+AXPress on [Open]: err=0
+RESULT clicked Open (AXPress)
+== rc=0
+== open said: rc=0
+== process
+Wavetype is NOT running
+== done
