@@ -758,9 +758,11 @@ def live_panel_open():
 
 def hud_want(active, recent, booting):
     """L'HUD va a schermo? Con HUD_ON spento solo come rete di sicurezza: mentre registri o elabori
-    senza card (chi chiama esce prima se la card c'e'). Da fermo e all'avvio mai."""
+    e la card NON e' disponibile (fallback tkinter, modulo assente). Con la card disponibile mai:
+    una dettatura scartata (silenzio, troppo corta) chiude la card un attimo prima che lo stato
+    torni fermo, e in quel buco l'HUD compariva. Da fermo e all'avvio mai."""
     if not HUD_ON:
-        return bool(active)
+        return bool(active) and not card_ready()
     always_vis = SKIN in ("face", "orb") and not flags["dismiss"]
     return bool(always_vis or active or recent or booting)
 

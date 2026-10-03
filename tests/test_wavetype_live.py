@@ -614,15 +614,21 @@ def test_recupero_salta_le_istruzioni_edit():
 
 def test_hud_spento_mai_da_fermo():
     """HUD_ON spento: da fermo e all'avvio l'HUD non e' mai voluto, in nessuna skin; resta solo la
-    rete di sicurezza mentre registri o elabori senza card. Riacceso torna com'era."""
-    saved = (wavetype.HUD_ON, wavetype.SKIN, wavetype.flags["dismiss"])
+    rete di sicurezza mentre registri o elabori e la card non e' disponibile. Con la card disponibile
+    mai, nemmeno nel buco fra la card chiusa e lo stato fermo di una dettatura scartata.
+    Riacceso torna com'era."""
+    saved = (wavetype.HUD_ON, wavetype.SKIN, wavetype.flags["dismiss"], wavetype.live["ui"])
     try:
         wavetype.HUD_ON = False
         for skin in wavetype.SKINS:
             wavetype.SKIN = skin
             assert wavetype.hud_want(False, True, True) is False, skin      # fermo, appena avviato
             assert wavetype.hud_want(False, False, False) is False, skin
-            assert wavetype.hud_want(True, False, False) is True, skin       # rete di sicurezza
+            wavetype.live["ui"] = False
+            assert wavetype.hud_want(True, False, False) is True, skin       # rete di sicurezza: card assente
+            wavetype.live["ui"] = True
+            assert wavetype.card_ready() is True
+            assert wavetype.hud_want(True, False, False) is False, skin      # card disponibile: mai
         wavetype.HUD_ON = True
         wavetype.flags["dismiss"] = False
         wavetype.SKIN = "face"
@@ -631,7 +637,7 @@ def test_hud_spento_mai_da_fermo():
         assert wavetype.hud_want(False, False, False) is False
         assert wavetype.hud_want(False, False, True) is True                 # i 4 s d'avvio
     finally:
-        wavetype.HUD_ON, wavetype.SKIN, wavetype.flags["dismiss"] = saved
+        wavetype.HUD_ON, wavetype.SKIN, wavetype.flags["dismiss"], wavetype.live["ui"] = saved
 
 
 # ---------- recupero (Win+Ctrl+R) ----------
