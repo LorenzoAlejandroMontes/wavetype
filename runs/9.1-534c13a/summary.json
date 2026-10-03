@@ -1,0 +1,263 @@
+{
+  "run": {
+    "GITHUB_RUN_NUMBER": "9",
+    "GITHUB_RUN_ID": "37123283462",
+    "GITHUB_SHA": "534c13a5163133e75084a7d4403d2118524edd8e",
+    "GITHUB_REF_NAME": "macos",
+    "RUNNER_OS": "macOS",
+    "RUNNER_ARCH": "ARM64"
+  },
+  "all_ok": true,
+  "checks": {
+    "built": {
+      "pass": true,
+      "detail": "dist/Wavetype.app/Contents/MacOS/Wavetype"
+    },
+    "dmg": {
+      "pass": true
+    },
+    "launched": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true,
+        "s4_copied": true
+      }
+    },
+    "ready": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true,
+        "s4_copied": true
+      }
+    },
+    "tap_ok": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true,
+        "s4_copied": true
+      }
+    },
+    "rec_start": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true,
+        "s4_copied": true
+      }
+    },
+    "card_shown": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true,
+        "s4_copied": true
+      }
+    },
+    "transcript": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true,
+        "s4_copied": true
+      }
+    },
+    "pasted_text_matches": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true
+      },
+      "word_ratio": {
+        "s1_ctrl_option": 0.929,
+        "s2_fn": 0.929,
+        "s3_context": 0.929
+      },
+      "min": 0.6
+    },
+    "copied_card": {
+      "pass": true,
+      "by_scenario": {
+        "s4_copied": true
+      },
+      "detail": {
+        "s4_copied": {
+          "target_closed": true,
+          "target_closed_how": "SIGTERM",
+          "closed_before_transcript": true,
+          "closed_before_outcome": true,
+          "paste_error": true,
+          "paste_error_msg": "app 16660 chiusa",
+          "no_pasted_event": true,
+          "card_copied": true,
+          "clipboard_word_ratio": 0.929,
+          "clipboard_matches": true,
+          "clipboard_changed": true,
+          "shot": "/Users/runner/work/wavetype/wavetype/results/shots/s4_copied_3_copied.jpg",
+          "shot_after_card_s": 0.23,
+          "shot_b": "/Users/runner/work/wavetype/wavetype/results/shots/s4_copied_3_copied_b.jpg",
+          "shot_b_start_after_card_s": 1.52
+        }
+      },
+      "clipboard_text": {
+        "s4_copied": "Hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?"
+      },
+      "min": 0.6,
+      "rule": "target app closed before the paste: error event where=paste, no pasted event, a card event with phase copied, the dictated text on the clipboard"
+    },
+    "live_words": {
+      "pass": true,
+      "by_scenario": {
+        "s1_ctrl_option": true,
+        "s2_fn": true,
+        "s3_context": true,
+        "s4_copied": true
+      },
+      "first_text": {
+        "s1_ctrl_option": "Hello",
+        "s2_fn": "Hello",
+        "s3_context": "Hello Sarah",
+        "s4_copied": "Hello"
+      },
+      "model": {
+        "present": true,
+        "dir": "/Users/runner/Library/Application Support/Wavetype/models",
+        "name": "sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-320ms-int8-2026-06-11",
+        "cache_hit": true,
+        "secs": 1,
+        "step_outcome": "success"
+      },
+      "rule": "a live event with chars > 0 before rec_stop, in at least one scenario"
+    },
+    "first_run_screenshots": {
+      "pass": true,
+      "by_page": {
+        "permissions": true,
+        "key": true
+      },
+      "rule": "screenshot taken, app alive after 10 s, no error event"
+    }
+  },
+  "tests_ok": false,
+  "tests": {
+    "test_mac_layer": {
+      "ok": false,
+      "line": "1 falliti",
+      "exit": 1
+    },
+    "test_context": {
+      "ok": true,
+      "line": "10/10 ok",
+      "exit": 0
+    },
+    "test_live_engine": {
+      "ok": true,
+      "line": "23/23 ok",
+      "exit": 0
+    },
+    "test_live_dual": {
+      "ok": true,
+      "line": "26/26 ok",
+      "exit": 0
+    },
+    "test_live_local": {
+      "ok": true,
+      "line": "17/17 ok",
+      "exit": 0
+    }
+  },
+  "scenarios_brief": {
+    "s1_ctrl_option": {
+      "ready_after_s": 13.2,
+      "frontmost_before": "TextEdit",
+      "textedit_text": "Hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?",
+      "word_ratio": 0.929,
+      "error": null,
+      "stop": {
+        "how": "quit hotkey",
+        "exit_code": 0
+      },
+      "initial_text_kept": null,
+      "live_first_text": "Hello",
+      "live_first_after_rec_s": 2.23,
+      "live_shot": "/Users/runner/work/wavetype/wavetype/results/shots/s1_ctrl_option_1_live_words.jpg",
+      "expect": "pasted",
+      "clipboard_text": null,
+      "copied_card": null
+    },
+    "s2_fn": {
+      "ready_after_s": 2.3,
+      "frontmost_before": "TextEdit",
+      "textedit_text": "Hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?",
+      "word_ratio": 0.929,
+      "error": null,
+      "stop": {
+        "how": "quit hotkey",
+        "exit_code": 0
+      },
+      "initial_text_kept": null,
+      "live_first_text": "Hello",
+      "live_first_after_rec_s": 2.16,
+      "live_shot": "/Users/runner/work/wavetype/wavetype/results/shots/s2_fn_1_live_words.jpg",
+      "expect": "pasted",
+      "clipboard_text": null,
+      "copied_card": null
+    },
+    "s3_context": {
+      "ready_after_s": 0.9,
+      "frontmost_before": "TextEdit",
+      "textedit_text": "I think hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?",
+      "word_ratio": 0.929,
+      "error": null,
+      "stop": {
+        "how": "quit hotkey",
+        "exit_code": 0
+      },
+      "initial_text_kept": true,
+      "live_first_text": "Hello Sarah",
+      "live_first_after_rec_s": 2.47,
+      "live_shot": "/Users/runner/work/wavetype/wavetype/results/shots/s3_context_1_live_words.jpg",
+      "expect": "pasted",
+      "clipboard_text": null,
+      "copied_card": null
+    },
+    "s4_copied": {
+      "ready_after_s": 1.2,
+      "frontmost_before": "TextEdit",
+      "textedit_text": null,
+      "word_ratio": 0.929,
+      "error": null,
+      "stop": {
+        "how": "quit hotkey",
+        "exit_code": 0
+      },
+      "initial_text_kept": null,
+      "live_first_text": "Hello",
+      "live_first_after_rec_s": 1.84,
+      "live_shot": "/Users/runner/work/wavetype/wavetype/results/shots/s4_copied_1_live_words.jpg",
+      "expect": "copied",
+      "clipboard_text": "Hello Sarah, the meeting moved to Thursday at 3. Can you bring the slides?",
+      "copied_card": true
+    }
+  },
+  "driver_preflight": {
+    "CGPreflightPostEventAccess": true,
+    "CGPreflightListenEventAccess": true,
+    "CGPreflightScreenCaptureAccess": true,
+    "AXIsProcessTrusted": true
+  },
+  "e2e_error": null,
+  "logs_found": [
+    "~/Library/Application Support/Wavetype/wavetype.log",
+    "~/Library/Application Support/Wavetype/crash.log"
+  ]
+}

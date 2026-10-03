@@ -1,0 +1,19 @@
+kTCCServiceAccessibility|/bin/bash|2
+kTCCServiceAccessibility|/opt/hca/hosted-compute-agent|2
+kTCCServiceAccessibility|/opt/hca/start_hca.sh|2
+kTCCServiceAccessibility|/usr/bin/osascript|2
+kTCCServiceAccessibility|/usr/libexec/sshd-keygen-wrapper|2
+kTCCServiceAccessibility|/usr/local/opt/runner/provisioner/provisioner|2
+kTCCServiceAccessibility|/usr/local/opt/runner/runprovisioner.sh|2
+kTCCServiceAccessibility|com.apple.Terminal|2
+kTCCServiceAccessibility|com.apple.dt.Xcode-Helper|2
+kTCCServiceMicrophone|/opt/hca/hosted-compute-agent|2
+kTCCServiceMicrophone|/opt/hca/start_hca.sh|2
+kTCCServiceMicrophone|/usr/local/opt/runner/provisioner/provisioner|2
+kTCCServiceMicrophone|/usr/local/opt/runner/runprovisioner.sh|2
+kTCCServicePostEvent|/Library/Application Support/Veertu/Anka/addons/ankarund|2
+kTCCServicePostEvent|/opt/hca/start_hca.sh|2
+kTCCServicePostEvent|/usr/local/opt/runner/runprovisioner.sh|2
+kTCCServiceScreenCapture|/bin/bash|2
+kTCCServiceScreenCapture|/opt/hca/hosted-compute-agent|2
+kTCCServiceScreenCapture|/usr/local/opt/runner/provisioner/provisioner|2
