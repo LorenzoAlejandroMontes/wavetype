@@ -1,0 +1,90 @@
+# A tag v<version> on main makes a DRAFT release with both downloads:
+#   Wavetype-Setup.exe  built here on Windows from the tagged commit (packaging/build.ps1)
+#   Wavetype-Mac.dmg    the notarized image of the macOS run named in packaging/release.env,
+#                       taken only if its sha256 is the one written there
+# The notes come from docs/releases/<tag>.md. Nothing is public until the draft is published by
+# hand, after the two files have been tried.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: The tag is the version in the build
+        shell: bash
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          grep -q "StringStruct('ProductVersion', '$V')" packaging/version_info.txt
+          grep -q "#define AppVersion \"$V\"" packaging/wavetype.iss
+          test -f "docs/releases/$GITHUB_REF_NAME.md"
+
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File packaging\build.ps1 -Version "$($env:GITHUB_REF_NAME.TrimStart('v'))"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-FileHash dist\Wavetype-Setup.exe -Algorithm SHA256 | Format-List
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Wavetype-Setup
+          path: dist/Wavetype-Setup.exe
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    # the only job with a write token: no pip, no PyInstaller, just the two files and gh
+    needs: windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: Wavetype-Setup
+          path: assets
+
+      - name: The notarized .dmg, checked against its sha256
+        run: |
+          . packaging/release.env
+          gh run download "$MAC_RUN_ID" -n "$MAC_ARTIFACT" -D mac
+          DMG="$(find mac -name 'Wavetype-*-arm64.dmg' | head -1)"
+          echo "$MAC_DMG_SHA256  $DMG" | sha256sum -c -
+          cp "$DMG" assets/Wavetype-Mac.dmg
+
+      - name: Draft release
+        run: |
+          (cd assets && sha256sum Wavetype-Setup.exe Wavetype-Mac.dmg && ls -l)
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+            --title "Wavetype ${GITHUB_REF_NAME#v}" \
+            --notes-file "docs/releases/$GITHUB_REF_NAME.md" \
+            assets/Wavetype-Setup.exe assets/Wavetype-Mac.dmg

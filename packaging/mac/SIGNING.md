@@ -1,102 +1,76 @@
-# Firma e notarizzazione di Wavetype per Mac (Codemagic)
+# Signing and notarizing Wavetype for Mac
 
-Senza firma Developer ID e notarizzazione, macOS 15 blocca l'app al primo avvio e l'utente deve
-passare da Impostazioni di Sistema > Privacy e sicurezza > "Apri comunque". Con firma + notarizzazione
-si apre con un doppio clic. Il build di GitHub Actions (`.github/workflows/macos.yml`) resta ad-hoc:
-serve a provare l'app, non a distribuirla.
+A Mac build that people download has a Developer ID signature and Apple's notarization ticket, so
+it opens with a double click. Every push to `macos` builds an ad-hoc signed app instead: it is
+there to be tested by the workflow, not to be handed out.
 
-## Cosa serve, una volta sola
+## How a release build is signed
 
-1. **Certificato Developer ID Application (lo crea solo l'Account Holder, cioe' Lorenzo).**
-   Apple non permette di crearlo con la chiave API (errore 403 "only the Account Holder"), quindi
-   e' un passo a mano. Da Windows, in una cartella privata fuori dal repo:
+The private key never goes to GitHub. The runner builds the app and opens a signing session
+([rcodesign](https://github.com/indygreg/apple-platform-rs) remote signing); the owner's machine
+joins that session with the Developer ID key and answers one signature request per file. The
+files stay on the runner, the key stays on the owner's machine. Notarization is submitted from
+the owner's machine too, with an App Store Connect Team API key; the runner waits for Apple's
+ticket and staples it.
 
-   ```powershell
-   openssl genrsa -out devid.key 2048
-   openssl req -new -key devid.key -out devid.csr -subj "/CN=Lorenzo Alejandro Montes/C=IT"
+1. Push the commit to a new branch named `macos-release-N`:
+
+   ```bash
+   git push origin macos:macos-release-N
    ```
 
-   developer.apple.com > Certificates > + > **Developer ID Application** (G2 Sub-CA) > carica
-   `devid.csr` > scarica il `.cer`. Poi, nella stessa cartella:
+   Use a new `N` each time: a second push to the same branch waits for the first run to end.
 
-   ```powershell
-   curl.exe -o DeveloperIDG2CA.cer https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
-   openssl x509 -inform DER -in developerID_application.cer -out devid.pem
-   openssl x509 -inform DER -in DeveloperIDG2CA.cer -out g2ca.pem
-   openssl pkcs12 -export -inkey devid.key -in devid.pem -certfile g2ca.pem -out devid.p12 `
-     -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1
-   [Convert]::ToBase64String([IO.File]::ReadAllBytes("$PWD\devid.p12")) | Set-Clipboard
-   ```
+2. Read the run id from the Actions page and start the owner's side right away, on the machine
+   that holds the key. The session on the relay expires if nobody joins within a few minutes.
+   The owner's script does four things, in this order:
 
-   Le opzioni `PBE-SHA1-3DES` servono perche' `security import` di macOS non legge i .p12 col
-   formato predefinito di OpenSSL 3. Il certificato intermedio G2 va dentro il .p12 perche' il
-   runner non e' detto che lo abbia.
+   - downloads the artifact `sjs-app` and runs
+     `rcodesign remote-sign --pem-file devid.key --pem-file devid.pem "<join string>"`
+   - downloads `notarize-app` and runs
+     `rcodesign notary-submit --api-key-file asc-key.json --wait notarize-app.dmg`
+   - the same two steps for `sjs-dmg` and `notarize-dmg`
 
-2. **Variabili su Codemagic** (le incolla Lorenzo, spuntando "Secure"): app Wavetype > Environment
-   variables > gruppo `devid_signing`:
-   - `DEVID_P12_BASE64` = il testo copiato sopra
-   - `DEVID_P12_PASSWORD` = la password scelta in `openssl pkcs12 -export`
+3. The workflow then staples both tickets, asks Gatekeeper (`spctl`, `stapler validate`), runs the
+   test suites and the end-to-end dictation on the signed app, and opens the app from a
+   quarantined copy of the .dmg with a screenshot before and after Gatekeeper's question.
+   The .dmg is in the run's artifact `wavetype-mac-<run>.<attempt>`; its sha256 is at the end of
+   `sign.log`.
 
-3. **Chiave App Store Connect**: l'integrazione `crew_app_store_connect` (chiave Team, Admin) esiste
-   gia' nel team Codemagic. L'app Wavetype va aggiunta allo stesso team, altrimenti non la vede.
-   notarytool accetta solo chiavi Team, non quelle individuali.
+Files: `ci/remote_sign.sh` (runner side), `devid-cert.pem` (the public certificate the session is
+encrypted to), `entitlements.plist`, `build.sh dmg` (builds the .dmg from the signed app without
+signing it again).
 
-## Il workflow
+## What the owner needs, once
 
-`codemagic.yaml` nella radice del repo (nessun segreto dentro: arrivano dal gruppo e
-dall'integrazione). Si avvia a mano da Codemagic > Start new build.
+- A **Developer ID Application** certificate (G2 Sub-CA). Only the Account Holder can create it,
+  at developer.apple.com > Certificates. The key and the request are made with OpenSSL:
 
-```yaml
-workflows:
-  macos-release:
-    name: Wavetype macOS (Developer ID + notarizzazione)
-    instance_type: mac_mini_m2
-    max_build_duration: 90
-    integrations:
-      app_store_connect: crew_app_store_connect
-    environment:
-      groups:
-        - devid_signing            # DEVID_P12_BASE64, DEVID_P12_PASSWORD
-      vars:
-        DEVID_IDENTITY: auto       # il primo "Developer ID Application" nel keychain
-        WAVETYPE_REQUIRE_NOTARIZATION: "1"
-    scripts:
-      - name: Python 3.12 di python.org (Tk 8.6 incluso)
-        script: |
-          curl -fsSLo /tmp/python.pkg https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg
-          sudo installer -pkg /tmp/python.pkg -target /
-          /usr/local/bin/python3.12 -c "import tkinter; print('tk', tkinter.TkVersion)"
-      - name: Chiave App Store Connect presente (conta le variabili, non le stampa)
-        script: |
-          n=$(env | grep -c '^APP_STORE_CONNECT_' || true)
-          echo "variabili APP_STORE_CONNECT_*: $n"
-          test -n "$APP_STORE_CONNECT_PRIVATE_KEY" && test -n "$APP_STORE_CONNECT_KEY_IDENTIFIER" && test -n "$APP_STORE_CONNECT_ISSUER_ID"
-      - name: Build, firma, notarizzazione, DMG
-        script: |
-          PYTHON=/usr/local/bin/python3.12 bash packaging/mac/build.sh
-          spctl -a -vv dist/Wavetype.app
-          spctl -a -t open --context context:primary-signature -vv dist/Wavetype-*-arm64.dmg
-    artifacts:
-      - dist/*.dmg
-```
+  ```bash
+  openssl genrsa -out devid.key 2048
+  openssl req -new -key devid.key -out devid.csr -subj "/CN=Your Name/C=US"
+  openssl x509 -inform DER -in developerID_application.cer -out devid.pem
+  ```
 
-`build.sh` fa tutto il resto: importa il .p12 in un keychain usa e getta, firma dentro-fuori con
-hardened runtime, `--timestamp` e `entitlements.plist`, notarizza `.app` e `.dmg` con
-`notarytool submit --wait` e li graffa con `stapler staple`. Se la notarizzazione e' rifiutata
-stampa il log di Apple e il build fallisce.
+  `devid.pem` is public and goes to `packaging/mac/devid-cert.pem`. `devid.key` stays in a private
+  folder outside the repository.
 
-## Se qualcosa va storto
+- An **App Store Connect Team API key** (notarization takes Team keys, not individual ones),
+  encoded once with `rcodesign encode-app-store-connect-api-key`.
 
-- "variabili APP_STORE_CONNECT_*: 0": l'integrazione non espone quei nomi in questo team. Verificare
-  il nome dell'integrazione in Team settings > Integrations, oppure creare il gruppo con le tre
-  variabili a mano (contenuto del .p8, Key ID, Issuer ID).
-- `no Developer ID Application in the keychain`: il .p12 non contiene la chiave privata o la
-  password e' sbagliata.
-- Notarizzazione "Invalid": il log stampato elenca i file non firmati o senza hardened runtime.
+- rcodesign 0.29.0, checked against the sha256 published with the release.
 
-## Alternativa: GitHub Actions
+## Things that went wrong before
 
-Lo stesso `build.sh` firma e notarizza anche su GitHub se in Settings > Secrets and variables >
-Actions ci sono `DEVID_P12_BASE64`, `DEVID_P12_PASSWORD`, `APP_STORE_CONNECT_PRIVATE_KEY`,
-`APP_STORE_CONNECT_KEY_IDENTIFIER`, `APP_STORE_CONNECT_ISSUER_ID`: il workflow li passa gia'.
-Il .p8 si scarica una volta sola: se non c'e' piu', serve una nuova chiave Team.
+- Signing the `.app` folder on Windows: the bundle is full of symbolic links and Windows does not
+  create them without elevated rights (WinError 1314). Hence the remote session.
+- `remote-sign --p12-file`: it picked the intermediate CA instead of the leaf certificate. Pass the
+  key and the certificate as two `--pem-file`.
+- nightly.link serves the artifacts of a run in progress by artifact id only
+  (`/actions/artifacts/<id>.zip`), not by name.
+
+## Signing on the runner instead
+
+`build.sh sign` also signs and notarizes by itself when `DEVID_P12_BASE64`, `DEVID_P12_PASSWORD`
+and the three `APP_STORE_CONNECT_*` variables are in the environment (the list is at the top of
+`build.sh`). This path puts the key on the runner; the releases so far have not used it.

@@ -6,11 +6,13 @@
 
 <p align="center">
   <b>Press a hotkey, talk, and clean text lands where you were typing.</b><br>
-  Free and open-source alternative to <a href="https://wisprflow.ai">Wispr Flow</a> for Windows, with a live preview next to your caret.
+  Free and open-source alternative to <a href="https://wisprflow.ai">Wispr Flow</a> for Windows and Mac, with a live preview next to your caret.
 </p>
 
 <p align="center">
-  <a href="https://github.com/LorenzoAlejandroMontes/wavetype/releases/latest/download/Wavetype-Setup.exe"><b>⬇ Download Wavetype for Windows</b></a><br>
+  <a href="https://github.com/LorenzoAlejandroMontes/wavetype/releases/latest/download/Wavetype-Setup.exe"><b>⬇ Download Wavetype for Windows</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/LorenzoAlejandroMontes/wavetype/releases/latest/download/Wavetype-Mac.dmg"><b>⬇ Download Wavetype for Mac</b></a><br>
   <sub>Install, paste a free Groq key, talk.</sub>
 </p>
 
@@ -20,14 +22,14 @@
 
 <p align="center">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-black">
-  <img alt="Platform: Windows" src="https://img.shields.io/badge/platform-Windows-black">
+  <img alt="Platform: Windows and macOS" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-black">
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-black">
   <img alt="183 tests" src="https://img.shields.io/badge/tests-183%20passing-black">
 </p>
 
 ---
 
-You press **Win+Ctrl**, you talk, you press it again. The words are transcribed, stripped of
+You press **Win+Ctrl** (**Fn** on a Mac), you talk, you press it again. The words are transcribed, stripped of
 "um" and "you know", punctuated, turned into lists where you meant lists, and pasted into
 whatever field had focus: your editor, a browser input, Slack, a terminal.
 
@@ -92,6 +94,21 @@ The installed app keeps your settings (`groq_key.txt`, `vocab.txt`, `card_style.
 them; uninstalling (Settings, Apps) asks whether to remove them too. The installer build runs on
 Groq; the offline engine below is for the from-source install.
 
+### Mac
+
+Apple silicon (M1 and newer), macOS 14 Sonoma or later.
+
+1. Download **[`Wavetype-Mac.dmg`](https://github.com/LorenzoAlejandroMontes/wavetype/releases/latest/download/Wavetype-Mac.dmg)**, open it and drag **Wavetype** onto **Applications**.
+2. Launch Wavetype from Applications. It runs in the background, with no Dock icon.
+3. The first launch walks you through two permissions, one row each with a live status and a
+   button that opens the right page of System Settings: **Microphone**, to hear you, and
+   **Accessibility**, to read your hotkey in any app and paste where your cursor is. Then paste a
+   free Groq key, or skip it and dictate with the built-in offline engine.
+4. Tap **Fn** in any app and talk.
+
+Settings, recordings and log live in `~/Library/Application Support/Wavetype`. To build the app
+yourself: `bash packaging/mac/build.sh` (Python 3.12 from python.org).
+
 ### From source
 
 You need **Python 3.11+** on Windows.
@@ -139,6 +156,21 @@ Every command is a chord on **Win+Ctrl**. Press and release, nothing to hold dow
 | **Win + Ctrl + Q** | Quit |
 | **Esc** | Cancel, at any stage |
 | **1** / **2** / **3** | Edit Mode only: run that chip immediately, without speaking |
+
+On a Mac the key is **Fn** (Globe), and it works two ways:
+
+| Key | What happens |
+|---|---|
+| Tap **Fn** | Start recording. Tap again to stop: the text is formatted and pasted |
+| Hold **Fn** | Talk while you hold it; let go and the text is pasted |
+| **Ctrl + Option** | Same as Fn, for keyboards without an Apple Fn key |
+| **Ctrl + Option + R** | Re-run the last recording and paste it again |
+| **Ctrl + Option + T** | Cycle the card style |
+| **Ctrl + Option + Q** | Quit |
+| **Esc** | Cancel, at any stage |
+
+So that Fn doesn't also open the emoji picker, set System Settings > Keyboard >
+**Press fn key to: Do Nothing**.
 
 ### While you are recording
 
