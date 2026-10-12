@@ -1,0 +1,61 @@
+
+idle              0 / 475 MB[modello] manca il modello live: lo scarico (475 MB, ripresa da 0 MB) in /Users/runner/Library/Application Support/Wavetype/models
+
+downloading      42 / 475 MB
+downloading      75 / 475 MB
+downloading     117 / 475 MB
+downloading     168 / 475 MB
+downloading     199 / 475 MB
+downloading     238 / 475 MB
+downloading     295 / 475 MB
+downloading     357 / 475 MB
+downloading     409 / 475 MB
+downloading     440 / 475 MB
+downloading     473 / 475 MB[modello] scaricato in 12s (40.2 MB/s), spacchetto
+
+extracting       13 / 475 MB
+extracting       29 / 475 MB
+extracting       45 / 475 MB
+extracting       61 / 475 MB
+extracting       72 / 475 MB
+extracting       87 / 475 MB
+extracting      103 / 475 MB
+extracting      118 / 475 MB
+extracting      133 / 475 MB
+extracting      143 / 475 MB
+extracting      153 / 475 MB
+extracting      165 / 475 MB
+extracting      175 / 475 MB
+extracting      185 / 475 MB
+extracting      192 / 475 MB
+extracting      203 / 475 MB
+extracting      213 / 475 MB
+extracting      225 / 475 MB
+extracting      236 / 475 MB
+extracting      249 / 475 MB
+extracting      259 / 475 MB
+extracting      269 / 475 MB
+extracting      278 / 475 MB
+extracting      286 / 475 MB
+extracting      294 / 475 MB
+extracting      299 / 475 MB
+extracting      310 / 475 MB
+extracting      317 / 475 MB
+extracting      325 / 475 MB
+extracting      335 / 475 MB
+extracting      345 / 475 MB
+extracting      355 / 475 MB
+extracting      366 / 475 MB
+extracting      376 / 475 MB
+extracting      384 / 475 MB
+extracting      395 / 475 MB
+extracting      405 / 475 MB
+extracting      415 / 475 MB
+extracting      424 / 475 MB
+extracting      435 / 475 MB
+extracting      447 / 475 MB
+extracting      460 / 475 MB
+extracting      472 / 475 MB[modello] spacchettato in 47s
+[modello] live pronto (scaricato): /Users/runner/Library/Application Support/Wavetype/models/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-320ms-int8-2026-06-11
+
+ {'state': 'ready', 'done': 475272949, 'total': 475272949, 'error': None}
