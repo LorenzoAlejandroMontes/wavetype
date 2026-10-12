@@ -1,0 +1,41 @@
+
+idle              0 / 475 MB[modello] manca il modello live: lo scarico (475 MB, ripresa da 0 MB) in /Users/runner/Library/Application Support/Wavetype/models
+
+downloading     155 / 475 MB
+downloading     273 / 475 MB
+downloading     461 / 475 MB[modello] scaricato in 3s (148.8 MB/s), spacchetto
+
+extracting       17 / 475 MB
+extracting       38 / 475 MB
+extracting       58 / 475 MB
+extracting       73 / 475 MB
+extracting       90 / 475 MB
+extracting      108 / 475 MB
+extracting      126 / 475 MB
+extracting      143 / 475 MB
+extracting      160 / 475 MB
+extracting      178 / 475 MB
+extracting      193 / 475 MB
+extracting      207 / 475 MB
+extracting      219 / 475 MB
+extracting      230 / 475 MB
+extracting      244 / 475 MB
+extracting      261 / 475 MB
+extracting      274 / 475 MB
+extracting      288 / 475 MB
+extracting      303 / 475 MB
+extracting      316 / 475 MB
+extracting      331 / 475 MB
+extracting      344 / 475 MB
+extracting      355 / 475 MB
+extracting      366 / 475 MB
+extracting      380 / 475 MB
+extracting      395 / 475 MB
+extracting      406 / 475 MB
+extracting      422 / 475 MB
+extracting      435 / 475 MB
+extracting      448 / 475 MB
+extracting      462 / 475 MB[modello] spacchettato in 34s
+[modello] live pronto (scaricato): /Users/runner/Library/Application Support/Wavetype/models/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-320ms-int8-2026-06-11
+
+ {'state': 'ready', 'done': 475272949, 'total': 475272949, 'error': None}

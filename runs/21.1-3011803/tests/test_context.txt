@@ -1,0 +1,11 @@
+ok   test_non_si_sa_resta_come_prima
+ok   test_inizio_frase
+ok   test_meta_frase
+ok   test_chiusure_si_guarda_dentro
+ok   test_abbassa_e_spazia
+ok   test_niente_spazio_doppio
+ok   test_nomi_e_sigle_restano_maiuscoli
+ok   test_inizio_frase_non_tocca_niente
+ok   test_lista_e_testo_multiriga
+ok   test_testo_vuoto_o_spazi
+10/10 ok
