@@ -107,7 +107,13 @@ staple)
         sleep 20
     done
     cat "$WORK/staple.log"
-    xcrun stapler validate "$T"
+    # validate asks Apple's servers too: one dropped connection must not fail a stapled build
+    n=0
+    until xcrun stapler validate "$T"; do
+        n=$((n + 1))
+        if [ "$n" -ge 5 ]; then echo "stapler validate failed $n times for $T"; exit 1; fi
+        sleep 20
+    done
     echo "stapled after $(( $(date +%s) - t0 )) s"
     ;;
 *)
