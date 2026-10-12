@@ -16,6 +16,7 @@ expectations calibrated: I review pull requests when I can, and I am the only ma
    .\.venv\Scripts\python tests\test_live_local.py
    .\.venv\Scripts\python tests\test_panel_styles.py
    .\.venv\Scripts\python tests\test_edit_card.py
+   .\.venv\Scripts\python tests\test_clip.py
    .\.venv\Scripts\python tests\test_context.py
    .\.venv\Scripts\python tests\test_derail.py
    .\.venv\Scripts\python tests\test_packaging.py

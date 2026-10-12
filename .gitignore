@@ -3,6 +3,7 @@ groq_key.txt
 
 # Personal / runtime data
 vocab.txt
+fmt_hints.txt
 wavetype_history.txt
 last_rec.wav
 skin.txt

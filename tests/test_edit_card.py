@@ -66,7 +66,7 @@ def test_testi_istruzione():
     for must in ("grammatica", "sintassi", "lingua", "elenco"):
         assert must in g, f"Grammar non dice '{must}'"
     s = ec.instruction("slack").lower()
-    for must in ("slack", "emoji", "informazioni"):
+    for must in ("slack", "emoji", "non perdere nessun fatto"):
         assert must in s, f"Slack non dice '{must}'"
 
 

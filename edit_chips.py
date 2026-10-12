@@ -34,21 +34,34 @@ from collections import namedtuple
 # per il modello (in italiano come gli altri prompt).
 Chip = namedtuple("Chip", "n key id label short done instr")
 
+# Grammar e Slack lasciavano dentro ripetizioni e frasi senza senso:
+# prima i due testi dicevano "non togliere niente". Ora il modello puo' togliere le PAROLE del
+# parlato (ripetizioni, intercalari, false partenze) e riformulare; restano i fatti.
 GRAMMAR_INSTR = (
-    "Correggi gli errori di grammatica, ortografia, punteggiatura e sintassi, e rendi il "
-    "messaggio piu' naturale e scorrevole da leggere. Mantieni la lingua del testo, il "
-    "significato, il tono, i nomi propri e tutte le informazioni presenti: non aggiungere "
-    "niente e non togliere niente. Non trasformare il testo in un elenco puntato: se e' un "
-    "discorso continuo resta un discorso continuo."
+    "Correggi grammatica, ortografia, punteggiatura e sintassi e rendi il testo scorrevole, come "
+    "lo scriverebbe bene la stessa persona. Il testo spesso viene da un dettato a voce: togli "
+    "ripetizioni, intercalari (cioè, nel senso, praticamente, tipo, insomma), false partenze e "
+    "pezzi lasciati a metà; dove una parola non ha senso nel contesto ma suona come una che ne "
+    "ha, metti quella giusta; riordina le frasi contorte perché si capiscano alla prima lettura. "
+    "Restano tutte le informazioni, i nomi, i numeri, le richieste, i dubbi, il tono, le sue "
+    "parole (niente sinonimi più eleganti) e la lingua del testo. Non aggiungere contenuti, non "
+    "cambiare il senso di una frase per farla tornare, non farne un elenco puntato se era un "
+    "discorso."
 )
 
 ENGLISH_INSTR = "Traduci il testo in inglese."
 
 SLACK_INSTR = (
-    "Riscrivi il testo come un messaggio di chat di lavoro su Slack: tono naturale da collega, "
-    "diretto, paragrafi brevi. Mantieni la lingua del testo, il significato e tutte le "
-    "informazioni presenti. Non inventare saluti, aperture o firme che non ci sono, non "
-    "aggiungere emoji, non trasformare il testo in un elenco puntato se non lo era."
+    "Riscrivi il testo come lo manderebbe su Slack un collega che scrive bene. Prima capisci "
+    "cosa vuole dire e cosa chiede, poi scrivilo chiaro e diretto: parti dal punto o dalla "
+    "richiesta, un'idea per frase, paragrafi brevi, niente giri di parole. Il testo spesso viene "
+    "da un dettato a voce: riformula liberamente, togli ripetizioni, intercalari, false partenze "
+    "e frasi che non aggiungono niente, e dove una parola non ha senso nel contesto metti quella "
+    "che voleva dire. Non perdere nessun fatto: chi ha chiesto cosa, chi fa cosa, nomi, numeri, "
+    "domande e dubbi (\"non è certo\") restano tutti. Restano la lingua del testo e il tono "
+    "informale da collega. Scrivi frasi, non un elenco puntato, a meno che il testo sia già un "
+    "elenco di voci o di passi. Non inventare fatti, non aprire con un saluto e non chiudere con "
+    "una firma se non ci sono, niente emoji."
 )
 
 CHIPS = (

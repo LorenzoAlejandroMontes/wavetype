@@ -24,7 +24,7 @@
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-black">
   <img alt="Platform: Windows and macOS" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-black">
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-black">
-  <img alt="183 tests" src="https://img.shields.io/badge/tests-183%20passing-black">
+  <img alt="209 tests" src="https://img.shields.io/badge/tests-209%20passing-black">
 </p>
 
 ---
@@ -241,6 +241,10 @@ app, next to `wavetype.py` from source). It is passed to both
 the transcription and the formatting pass, so proper nouns come out spelled the way you spell them.
 That file is gitignored.
 
+Words the recognizer keeps mishearing as a real word ("cloud" when you say Claude) go in
+`fmt_hints.txt`, same folder, one per line. That list reaches only the formatting pass, which swaps
+the word back where the sentence makes no sense without it.
+
 ## How it works
 
 - `wavetype.py` — the orchestrator: hotkeys, recording, transcription, formatting, paste. tkinter
@@ -261,6 +265,7 @@ That file is gitignored.
 .\.venv\Scripts\python tests\test_live_local.py
 .\.venv\Scripts\python tests\test_panel_styles.py
 .\.venv\Scripts\python tests\test_edit_card.py
+.\.venv\Scripts\python tests\test_clip.py
 .\.venv\Scripts\python tests\test_context.py
 .\.venv\Scripts\python tests\test_derail.py
 .\.venv\Scripts\python tests\test_packaging.py
