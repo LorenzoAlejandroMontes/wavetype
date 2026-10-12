@@ -4,7 +4,7 @@
 ; (see paths.py) and survives upgrades; the uninstaller asks before removing it.
 
 #ifndef AppVersion
-  #define AppVersion "0.2.0"
+  #define AppVersion "0.2.1"
 #endif
 #define AppName "Wavetype"
 #define AppExe "Wavetype.exe"
